@@ -355,6 +355,64 @@ class FreeCellGame:
             if self.CheckReverse(op[0], op[1]):
                 res.append(op)
         return res
+    
+    # --- Thêm/Sửa các hàm sau vào class FreeCellGame trong Freecell_Game.py ---
+
+    def IsValidSequence(self, cards):
+        """Kiểm tra một danh sách bài có tạo thành chuỗi giảm dần, xen kẽ màu không"""
+        if not cards: return False
+        for i in range(len(cards) - 1):
+            curr_card = cards[i]
+            next_card = cards[i+1]
+            # Phải khác màu (Red/Black) và giảm đúng 1 đơn vị
+            if curr_card.rb == next_card.rb or curr_card.num != next_card.num + 1:
+                return False
+        return True
+
+    def GetMaxMovable(self, from_pile_id, num_cards_to_move):
+        """
+        Tính số lá bài tối đa có thể di chuyển theo luật chuẩn.
+        
+        Công thức: (free_cells + 1) * 2^empty_tableau_columns
+        Lưu ý: Nếu kéo hết tất cả bài từ cột nguồn, cột đó sẽ trở nên trống
+        nên được tính vào empty_tableau_columns
+        """
+        # Đếm các ô Free Cell (4-7) đang trống
+        empty_free_cells = sum(1 for i in range(4, 8) if len(self.card_heaps[i].heap_list) == 0)
+        
+        # Đếm các cột Tableau (8-15) đang trống
+        empty_columns = sum(1 for i in range(8, 16) if len(self.card_heaps[i].heap_list) == 0)
+        
+        # QUAN TRỌNG: Nếu kéo TOÀN BỘ bài từ cột nguồn, cột đó sẽ trở nên trống
+        # Nên cần cộng thêm nó vào empty_columns để tính toán đúng
+        if 8 <= from_pile_id <= 15:
+            source_heap_size = len(self.card_heaps[from_pile_id].heap_list)
+            if source_heap_size == num_cards_to_move:
+                # Kéo hết bài từ cột này = cột này sẽ trở nên trống
+                empty_columns += 1
+        
+        return (1 + empty_free_cells) * (2 ** empty_columns)
+
+    # Cập nhật CheckMove để hỗ trợ kiểm tra cả dây bài
+    def CheckMoveSequence(self, come_id, to_id, card_index):
+        heap_from = self.card_heaps[come_id].heap_list
+        sub_stack = heap_from[card_index:]
+        
+        # 1. Kiểm tra dây bài định kéo có đúng quy tắc (giảm dần, khác màu) không
+        if not self.IsValidSequence(sub_stack):
+            return False, "Dây bài không hợp lệ (phải khác màu và giảm dần)!"
+            
+        # 2. Kiểm tra có đủ chỗ trống để di chuyển không
+        max_allowed = self.GetMaxMovable(come_id, len(sub_stack))
+        if len(sub_stack) > max_allowed:
+            return False, f"Không đủ ô trống! Chỉ có thể di chuyển tối đa {max_allowed} lá."
+
+        # 3. Kiểm tra lá bài đầu tiên của dây có đặt được vào cột đích không
+        first_card = sub_stack[0]
+        if self.card_heaps[to_id].CheckMoveInto(first_card):
+            return True, ""
+        
+        return False, "Lá bài không phù hợp với cột đích!"
 
 
 # %%
