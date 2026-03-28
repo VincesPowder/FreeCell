@@ -279,20 +279,96 @@ class FreeCellGame:
             self.Move(oprt[0], oprt[1])
         return True
 
-    def NewGame(self):
+    def NewGame(self, seed=None):
+        """
+        Tạo game mới với lá bài được xáo trộn.
+        
+        Args:
+            seed: Seed cho random. Nếu None, dùng seed ngẫu nhiên từ thời gian.
+        """
         # clear cards and heaps
         for x in self.card_heaps:
             x.reset([])
         # no need to clear cards
         deck = [i for i in range(52)]
         card_left = 52
-        random.seed(int(time.time() * 1000) % 2**32)
+        
+        # Nếu không có seed, tạo seed ngẫu nhiên từ thời gian
+        if seed is None:
+            seed = int(time.time() * 1000) % 2**32
+        
+        random.seed(seed)
         for i in range(52):
             card_pick_i = random.randint(0, 10000) % card_left
             self.card_heaps[i % 8 + 8].PushTop(self.CARDS[deck[card_pick_i]])
             card_left -= 1
             deck[card_pick_i] = deck[card_left]
-        return
+        return seed
+
+    def NewRandomGameWithDifficulty(self, difficulty="medium"):
+        """
+        Tạo game mới với độ khó cụ thể và seed NGẪU NHIÊN.
+        Mỗi lần gọi sẽ tạo game khác nhau (seed khác) nhưng cùng level khó.
+        
+        Args:
+            difficulty: "easy", "medium", "hard", "expert"
+            
+        Returns:
+            seed: Seed được dùng cho game
+        """
+        # Phạm vi seed cho từng độ khó
+        # Càng cao là càng khó
+        difficulty_ranges = {
+            "easy": (1, 1000),           # Easy: seed 1-1000
+            "medium": (1000, 10000),     # Medium: seed 1000-10000
+            "hard": (10000, 20000),      # Hard: seed 10000-20000
+            "expert": (20000, 32000)     # Expert: seed 20000-32000
+        }
+        
+        # Lấy phạm vi seed, mặc định medium nếu invalid
+        min_seed, max_seed = difficulty_ranges.get(difficulty, (1000, 10000))
+        
+        # Generate seed ngẫu nhiên trong phạm vi
+        random_seed = random.randint(min_seed, max_seed)
+        return self.NewGame(random_seed)
+
+    def NewGameWithDifficulty(self, difficulty="medium"):
+        """
+        Tạo game mới với độ khó cụ thể (giống FreeCell Solitaire).
+        Mỗi độ khó dùng seed cố định, nên game giống nhau mỗi lần chọn cùng độ khó.
+        
+        Args:
+            difficulty: "easy", "medium", "hard", "expert"
+            
+        Returns:
+            seed: Seed được dùng cho game
+        """
+        # Các seed cố định cho từng độ khó
+        # FreeCell Solitaire truyền thống dùng game numbering 1-32000+
+        difficulty_seeds = {
+            "easy": 1,           # Seed dễ
+            "medium": 100,       # Seed trung bình  
+            "hard": 1000,        # Seed khó
+            "expert": 10000       # Seed rất khó
+        }
+        
+        # Lấy seed tương ứng, mặc định "medium" nếu invalid
+        seed = difficulty_seeds.get(difficulty, 100)
+        return self.NewGame(seed)
+    
+    def NewGameWithNumber(self, game_number):
+        """
+        Tạo game với game number cố định (giống FreeCell Solitaire chính thức).
+        Mỗi game number cho một cấu hình lá bài nhất định.
+        
+        Args:
+            game_number: Số game (1-32000+)
+            
+        Returns:
+            seed: Seed được dùng
+        """
+        seed = game_number % 2**32
+        return self.NewGame(seed)
 
     def RandomNewGameAndRecordCost(self, train_data, mode):
         """
@@ -402,17 +478,17 @@ class FreeCellGame:
         if not self.IsValidSequence(sub_stack):
             return False, "Dây bài không hợp lệ (phải khác màu và giảm dần)!"
             
-        # 2. Kiểm tra có đủ chỗ trống để di chuyển không
+        # 2. Check if there are enough free cells to move
         max_allowed = self.GetMaxMovable(come_id, len(sub_stack))
         if len(sub_stack) > max_allowed:
-            return False, f"Không đủ ô trống! Chỉ có thể di chuyển tối đa {max_allowed} lá."
+            return False, f"Not enough free cells! Can only move max {max_allowed} cards."
 
-        # 3. Kiểm tra lá bài đầu tiên của dây có đặt được vào cột đích không
+        # 3. Check if the first card of the sequence can be placed to target column
         first_card = sub_stack[0]
         if self.card_heaps[to_id].CheckMoveInto(first_card):
             return True, ""
         
-        return False, "Lá bài không phù hợp với cột đích!"
+        return False, "Card does not fit the target column!"
 
 
 # %%
