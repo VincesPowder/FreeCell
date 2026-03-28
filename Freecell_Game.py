@@ -1,7 +1,7 @@
 # %%
 import random
 import copy
-
+import time
 # %%
 MAX_SEARCH_DEPTH = 5
 MAX_SEARCH_NODES = 1000
@@ -286,7 +286,7 @@ class FreeCellGame:
         # no need to clear cards
         deck = [i for i in range(52)]
         card_left = 52
-        random.seed(133333)
+        random.seed(int(time.time() * 1000) % 2**32)
         for i in range(52):
             card_pick_i = random.randint(0, 10000) % card_left
             self.card_heaps[i % 8 + 8].PushTop(self.CARDS[deck[card_pick_i]])
