@@ -3,6 +3,8 @@ import utils
 import copy
 import time
 from Freecell_Game import FreeCellGame
+from BFS_Solver import BFSSolver
+import threading
 
 # --- CONFIGURATION ---
 SCREEN_WIDTH = 1280
@@ -52,8 +54,8 @@ class WindowGame:
             "Restart": pygame.Rect(900, PANEL_Y + 20, 90, 35),
             "Undo": pygame.Rect(1000, PANEL_Y + 20, 90, 35),
             "Mode": pygame.Rect(1100, PANEL_Y + 20, 90, 35),
-            
-            
+            "Solver": pygame.Rect(900, PANEL_Y + 60, 90, 35),
+            "Quit": pygame.Rect(1000, PANEL_Y + 60, 90, 35),
         }
         
         # Difficulty menu (upward from Mode button)
@@ -65,6 +67,20 @@ class WindowGame:
             "expert": pygame.Rect(1100, PANEL_Y - 30, 90, 30),
         }
         
+        # Solver menu (upward from Solver button - same as Mode menu)
+        self.solver_menu_open = False
+        self.solver_menu = {
+            "BFS": pygame.Rect(900, PANEL_Y - 120, 90, 30),
+            "DFS": pygame.Rect(900, PANEL_Y - 90, 90, 30),
+            "UCS": pygame.Rect(900, PANEL_Y - 60, 90, 30),
+            "A*": pygame.Rect(900, PANEL_Y - 30, 90, 30),
+        }
+        
+        # Solver results
+        self.solver_running = False
+        self.solver_result = None
+        self.solver_selected = None
+        
         self.MainLoop()
 
     def GetCardRect(self, pile_id, card_index):
@@ -72,6 +88,28 @@ class WindowGame:
             return pygame.Rect(X_START + GAP * pile_id, 40, CARD_W, CARD_H)
         else: 
             return pygame.Rect(X_START + GAP * (pile_id - 8), 210 + OFFSET_Y * card_index, CARD_W, CARD_H)
+    
+    def run_solver_thread(self, solver_algo):
+        """Run solver in background thread"""
+        try:
+            if solver_algo == "BFS":
+                solver = BFSSolver(self.freecell_game)
+                self.solver_result = solver.solve(max_nodes=100000, timeout=120)
+                self.solver_selected = "BFS"
+                
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[BFS] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append("Click 'Play Solution' to see the moves")
+                else:
+                    self.log.append("BFS: No solution found")
+            else:
+                self.log.append(f"{solver_algo} solver not implemented yet")
+                
+        except Exception as e:
+            self.log.append(f"Error running {solver_algo}: {str(e)}")
+        
+        self.solver_running = False
 
     def GetClickedPileAndCard(self, pos):
         """Identify pile_id and index of clicked card"""
@@ -79,15 +117,25 @@ class WindowGame:
         if self.buttons["Mode"].collidepoint(pos):
             return "mode", -1
         
+        # Check Solver button
+        if self.buttons["Solver"].collidepoint(pos):
+            return "solver", -1
+        
         # Check difficulty menu if open
         if self.mode_menu_open:
             for difficulty, rect in self.difficulty_menu.items():
                 if rect.collidepoint(pos):
                     return difficulty, -1
         
+        # Check solver menu if open
+        if self.solver_menu_open:
+            for algo, rect in self.solver_menu.items():
+                if rect.collidepoint(pos):
+                    return algo, -1
+        
         # Check other buttons
         for name, rect in self.buttons.items():
-            if name != "Mode" and rect.collidepoint(pos):
+            if name != "Mode" and name != "Solver" and rect.collidepoint(pos):
                 return name, -1
 
         # Check from bottom to top (to get top card first)
@@ -122,6 +170,21 @@ class WindowGame:
                         # Handle Mode button
                         if p_id == "mode":
                             self.mode_menu_open = not self.mode_menu_open
+                            self.solver_menu_open = False  # Close solver menu
+                        # Handle Solver button
+                        elif p_id == "solver":
+                            self.solver_menu_open = not self.solver_menu_open
+                            self.mode_menu_open = False  # Close mode menu
+                        # Handle solver selection from menu
+                        elif p_id in ["BFS", "DFS", "UCS", "A*"]:
+                            if not self.solver_running:
+                                self.solver_running = True
+                                self.solver_menu_open = False
+                                self.log.append(f"Running {p_id} solver...")
+                                solver_thread = threading.Thread(target=self.run_solver_thread, args=(p_id,), daemon=True)
+                                solver_thread.start()
+                            else:
+                                self.log.append("Solver already running...")
                         # Handle difficulty selection from menu
                         elif p_id in ["easy", "medium", "hard", "expert"]:
                             self.difficulty = p_id
@@ -151,9 +214,13 @@ class WindowGame:
                             self.freecell_game.card_heaps = self.undo_stack.pop()
                             self.log.append("Move undone.")
                             self.button_highlight_time["Undo"] = time.time()  # Highlight Undo button
+                        elif p_id == "Quit":
+                            pygame.quit()
+                            return
                     
                     elif p_id != -1 and c_idx != -1: # Click on card
                         self.mode_menu_open = False  # Close menu
+                        self.solver_menu_open = False  # Close solver menu
                         heap = self.freecell_game.card_heaps[p_id].heap_list
                         self.drag_cards = heap[c_idx:]
                         
@@ -233,6 +300,17 @@ class WindowGame:
                 pygame.draw.rect(SCREEN, (155, 50, 100), rect, 1, border_radius=4)  # Quinacridone border
                 
                 text = difficulty.capitalize()
+                item_text = FONT.render(text, True, (155, 50, 100))  # Quinacridone Magenta - dark text
+                SCREEN.blit(item_text, item_text.get_rect(center=rect.center))
+
+        # Draw solver menu (downward from Solver button)
+        if self.solver_menu_open:
+            for algo, rect in self.solver_menu.items():
+                color = (200, 230, 150) if self.solver_selected == algo else (255, 200, 230)  # Tea Green / Fairy Tale - light
+                pygame.draw.rect(SCREEN, color, rect, border_radius=4)
+                pygame.draw.rect(SCREEN, (155, 50, 100), rect, 1, border_radius=4)  # Quinacridone border
+                
+                text = algo
                 item_text = FONT.render(text, True, (155, 50, 100))  # Quinacridone Magenta - dark text
                 SCREEN.blit(item_text, item_text.get_rect(center=rect.center))
 
