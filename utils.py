@@ -1,4 +1,6 @@
 import pygame
+import psutil
+import os
 from Freecell_Game import FreeCellGame
 
 SCREEN_W = 1280
@@ -69,3 +71,8 @@ def LoadRects():
     for x in range(8, 16):
         RECTS[x] = pygame.Rect(X_START + GAP * (x - 8), 200, CARD_W, 500)
     return RECTS
+
+def get_memory_use():
+    """Hàm đo bộ nhớ đang sử dụng (MB) để làm báo cáo đồ án"""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / 1024 / 1024

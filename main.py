@@ -5,6 +5,7 @@ import time
 from Freecell_Game import FreeCellGame
 from BFS_Solver import BFSSolver
 from A_Star_Solver import AStarSolver
+from UCS_Solver import UCSSolver
 import threading
 
 # --- CONFIGURATION ---
@@ -175,6 +176,27 @@ class WindowGame:
                 else:
                     error_msg = self.solver_result.get('error', 'No solution found')
                     self.log.append(f"A*: {error_msg}")
+            elif solver_algo == "UCS":
+                solver = UCSSolver(self.freecell_game)
+            # UCS tìm kiếm theo chi phí đường đi thấp nhất (g_n)
+            # Giới hạn max_nodes để tránh tràn bộ nhớ nếu máy yếu
+                self.solver_result = solver.solve(max_nodes=500000, timeout=450)
+                self.solver_selected = "UCS"
+            
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[UCS] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                
+                # Lưu lời giải và tự động chạy hoạt cảnh (animation)
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing animation...")
+                else:
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"UCS: {error_msg}")
             else:
                 self.log.append(f"{solver_algo} solver not implemented yet")
                 

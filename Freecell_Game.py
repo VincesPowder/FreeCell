@@ -506,6 +506,17 @@ class FreeCellGame:
             return True, ""
         
         return False, "Card does not fit the target column!"
+    
+    def is_goal(self):
+        """
+        Kiểm tra xem đã đạt đến trạng thái đích chưa.
+        Theo quy tắc: Trò chơi thắng khi tất cả 52 lá bài đã được chuyển vào Foundations[cite: 64].
+        """
+        total_cards_in_foundations = 0
+        for suit in self.foundations:
+            total_cards_in_foundations += len(self.foundations[suit])
+        
+        return total_cards_in_foundations == 52
 
 
 # %%
