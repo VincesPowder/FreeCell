@@ -4,6 +4,7 @@ import copy
 import time
 from Freecell_Game import FreeCellGame
 from BFS_Solver import BFSSolver
+from A_Star_Solver import AStarSolver
 import threading
 
 # --- CONFIGURATION ---
@@ -30,7 +31,7 @@ class WindowGame:
         # If no difficulty set yet (first time), default to easy
         if not hasattr(self, 'difficulty'):
             self.difficulty = "easy"
-        self.freecell_game.NewRandomGameWithDifficulty(self.difficulty)
+        self.freecell_game.NewGameWithDifficulty(self.difficulty)
         
         self.initial_state = copy.deepcopy(self.freecell_game.card_heaps)
         self.undo_stack = []
@@ -54,7 +55,8 @@ class WindowGame:
             "Restart": pygame.Rect(900, PANEL_Y + 20, 90, 35),
             "Undo": pygame.Rect(1000, PANEL_Y + 20, 90, 35),
             "Mode": pygame.Rect(1100, PANEL_Y + 20, 90, 35),
-            "Solver": pygame.Rect(900, PANEL_Y + 60, 90, 35),
+            "Solver": pygame.Rect(800, PANEL_Y + 60, 90, 35),
+            "Stop": pygame.Rect(900, PANEL_Y + 60, 90, 35),
             "Quit": pygame.Rect(1000, PANEL_Y + 60, 90, 35),
         }
         
@@ -81,7 +83,48 @@ class WindowGame:
         self.solver_result = None
         self.solver_selected = None
         
+        # Animation variables
+        self.animation_running = False
+        self.animation_moves = []
+        self.animation_current_move = 0
+        self.animation_start_time = None
+        self.move_duration = 0.5  # Duration of each move animation in seconds
+        
         self.MainLoop()
+
+    def stop_animation(self):
+        """Stop the animation"""
+        self.animation_running = False
+        self.log.append("Animation stopped")
+    
+    def update_animation(self):
+        """Update animation state and apply moves as needed"""
+        if not self.animation_running or not self.animation_moves:
+            return
+        
+        current_time = time.time()
+        elapsed = current_time - self.animation_start_time
+        
+        # Calculate how many moves should have been played
+        moves_to_play = int(elapsed / self.move_duration)
+        
+        # Apply moves that haven't been applied yet
+        while self.animation_current_move < moves_to_play and self.animation_current_move < len(self.animation_moves):
+            move = self.animation_moves[self.animation_current_move]
+            from_id, to_id = move
+            
+            # Apply the move
+            if len(self.freecell_game.card_heaps[from_id].heap_list) > 0:
+                card = self.freecell_game.card_heaps[from_id].heap_list.pop()
+                self.freecell_game.card_heaps[to_id].PushTop(card)
+                self.log.append(f"[Animation] Move {self.animation_current_move + 1}/{len(self.animation_moves)}: Heap {from_id} → {to_id}")
+            
+            self.animation_current_move += 1
+        
+        # Check if animation is complete
+        if self.animation_current_move >= len(self.animation_moves):
+            self.animation_running = False
+            self.log.append("Animation complete! All moves played.")
 
     def GetCardRect(self, pile_id, card_index):
         if pile_id < 8: 
@@ -94,15 +137,44 @@ class WindowGame:
         try:
             if solver_algo == "BFS":
                 solver = BFSSolver(self.freecell_game)
-                self.solver_result = solver.solve(max_nodes=100000, timeout=120)
+                # Note: BFS is slow for FreeCell due to large state space
+                # Even solvable games may take 5-10 minutes
+                # For faster solving, use A* instead
+                self.solver_result = solver.solve(max_nodes=1000000, timeout=600)
                 self.solver_selected = "BFS"
                 
                 if self.solver_result['solved'] and self.solver_result['solution']:
                     self.log.append(f"[BFS] Solved in {self.solver_result['search_length']} moves!")
                     self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
-                    self.log.append("Click 'Play Solution' to see the moves")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                    # Store solution and auto-start animation
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing animation...")
                 else:
-                    self.log.append("BFS: No solution found")
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"BFS: {error_msg}")
+            elif solver_algo == "A*":
+                solver = AStarSolver(self.freecell_game)
+                # A* is much faster due to heuristic guidance
+                self.solver_result = solver.solve(max_nodes=100000, timeout=300)
+                self.solver_selected = "A*"
+                
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[A*] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                    # Store solution and auto-start animation
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing animation...")
+                else:
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"A*: {error_msg}")
             else:
                 self.log.append(f"{solver_algo} solver not implemented yet")
                 
@@ -121,6 +193,10 @@ class WindowGame:
         if self.buttons["Solver"].collidepoint(pos):
             return "solver", -1
         
+        # Check Stop button
+        if self.buttons["Stop"].collidepoint(pos):
+            return "stop", -1
+        
         # Check difficulty menu if open
         if self.mode_menu_open:
             for difficulty, rect in self.difficulty_menu.items():
@@ -135,7 +211,7 @@ class WindowGame:
         
         # Check other buttons
         for name, rect in self.buttons.items():
-            if name != "Mode" and name != "Solver" and rect.collidepoint(pos):
+            if name not in ["Mode", "Solver", "Stop"] and rect.collidepoint(pos):
                 return name, -1
 
         # Check from bottom to top (to get top card first)
@@ -175,6 +251,9 @@ class WindowGame:
                         elif p_id == "solver":
                             self.solver_menu_open = not self.solver_menu_open
                             self.mode_menu_open = False  # Close mode menu
+                        # Handle Stop button
+                        elif p_id == "stop":
+                            self.stop_animation()
                         # Handle solver selection from menu
                         elif p_id in ["BFS", "DFS", "UCS", "A*"]:
                             if not self.solver_running:
@@ -202,13 +281,18 @@ class WindowGame:
                             self.freecell_game.NewRandomGameWithDifficulty(self.difficulty)
                             self.initial_state = copy.deepcopy(self.freecell_game.card_heaps)
                             self.undo_stack = []
+                            self.animation_moves = []  # Clear any animation
+                            self.animation_running = False
                             self.log = [f"New game! Difficulty: {self.difficulty.upper()}"]
                             self.log_offset = 0  # Reset scroll
                             self.mode_menu_open = False
                             self.button_highlight_time["New"] = time.time()  # Highlight New button
                         elif p_id == "Restart":
                             self.freecell_game.card_heaps = copy.deepcopy(self.initial_state)
-                            self.undo_stack = []; self.log.append("Game restarted.")
+                            self.undo_stack = []
+                            self.animation_moves = []  # Clear animation
+                            self.animation_running = False
+                            self.log.append("Game restarted.")
                             self.button_highlight_time["Restart"] = time.time()  # Highlight Restart button
                         elif p_id == "Undo" and self.undo_stack:
                             self.freecell_game.card_heaps = self.undo_stack.pop()
@@ -260,6 +344,9 @@ class WindowGame:
                         
                         self.dragging = False
                         self.drag_cards = []
+
+            # Update animation
+            self.update_animation()
 
             self.UpdateScreen(mouse_pos)
 
@@ -358,6 +445,22 @@ class WindowGame:
                 drag_x = mouse_pos[0] + self.mouse_offset_x
                 drag_y = mouse_pos[1] + self.mouse_offset_y + (i * OFFSET_Y)
                 SCREEN.blit(IMAGES[card.color + card.point], (drag_x, drag_y))
+
+        # Draw animation status bar
+        if self.animation_running or self.animation_moves:
+            status_rect = pygame.Rect(50, 10, 600, 20)
+            pygame.draw.rect(SCREEN, (100, 150, 150), status_rect)
+            pygame.draw.rect(SCREEN, (255, 255, 255), status_rect, 2)
+            
+            if self.animation_moves:
+                progress = self.animation_current_move / len(self.animation_moves) if self.animation_moves else 0
+                progress_width = int(598 * progress)
+                progress_rect = pygame.Rect(51, 11, progress_width, 18)
+                pygame.draw.rect(SCREEN, (100, 200, 100), progress_rect)
+                
+                status_text = f"Animation: {self.animation_current_move}/{len(self.animation_moves)} moves"
+                status_surf = FONT.render(status_text, True, (255, 255, 255))
+                SCREEN.blit(status_surf, (60, 12))
 
         pygame.display.update()
 
