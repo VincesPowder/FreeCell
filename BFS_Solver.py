@@ -6,6 +6,7 @@ Implement Breadth-First Search algorithm to solve FreeCell
 import copy
 import time
 import tracemalloc
+import psutil
 import os
 from collections import deque
 from Freecell_Game import FreeCellGame
@@ -14,12 +15,13 @@ from Freecell_Game import FreeCellGame
 class BFSSolver:
     """BFS Solver for FreeCell Game"""
     
-    def __init__(self, game_state):
+    def __init__(self, game_state, on_move_callback=None):
         """
         Initialize BFS Solver
         
         Args:
             game_state: Initial FreeCellGame instance
+            on_move_callback: Optional callback function(move, game_state) for animation
         """
         self.initial_game = copy.deepcopy(game_state)
         self.visited_states = set()  # For storing visited state hashes
@@ -30,6 +32,7 @@ class BFSSolver:
         self.start_memory = None
         self.end_memory = None
         self.search_length = 0
+        self.on_move_callback = on_move_callback  # Animation callback
         
     def _get_game_state_hash(self, game):
         """
@@ -51,7 +54,7 @@ class BFSSolver:
     def _check_win(self, game):
         """
         Check if the current game state is a winning state
-        (all 52 cards are on foundation piles in order)
+        (all 52 cards are on foundation piles in correct order)
         
         Args:
             game: FreeCellGame instance
@@ -59,16 +62,9 @@ class BFSSolver:
         Returns:
             bool: True if won, False otherwise
         """
-        # All cards should be on foundation piles (indices 0-3)
-        # Each foundation should have 13 cards
-        for i in range(4):
-            if len(game.card_heaps[i].heap_list) != 13:
-                return False
-        # Check that cascades (8-15) and free cells (4-7) are empty
-        for i in range(4, 16):
-            if len(game.card_heaps[i].heap_list) != 0:
-                return False
-        return True
+        # Use the game's built-in CheckWinStrict method
+        # All 4 foundations must have 13 cards each, ending with King
+        return game.CheckWinStrict()
     
     def _get_valid_moves(self, game):
         """
@@ -128,6 +124,8 @@ class BFSSolver:
         # Record start metrics
         self.start_time = time.time()
         tracemalloc.start()
+        process = psutil.Process(os.getpid())
+        self.start_memory = process.memory_info().rss / (1024 ** 2)
         
         # Initialize queue for BFS
         # Each item: (current_game_state, path=[list of moves])
@@ -138,13 +136,12 @@ class BFSSolver:
         # Check if initial state is already a winning state
         if self._check_win(initial_game):
             self.end_time = time.time()
-            peak_memory = process.memory_info().rss / (1024 ** 2)
-            self.end_memory = peak_memory
+            self.end_memory = process.memory_info().rss / (1024 ** 2)
             return {
                 'solved': True,
                 'solution': [],
                 'search_time': self.end_time - self.start_time,
-                'memory_used': peak_memory - self.start_memory,
+                'memory_used': self.end_memory - self.start_memory,
                 'expanded_nodes': 1,
                 'search_length': 0
             }
@@ -158,13 +155,12 @@ class BFSSolver:
             # Check timeout
             if time.time() - self.start_time > timeout:
                 self.end_time = time.time()
-                peak_memory = process.memory_info().rss / (1024 ** 2)
-                self.end_memory = peak_memory
+                self.end_memory = process.memory_info().rss / (1024 ** 2)
                 return {
                     'solved': False,
                     'solution': [],
                     'search_time': self.end_time - self.start_time,
-                    'memory_used': peak_memory - self.start_memory,
+                    'memory_used': self.end_memory - self.start_memory,
                     'expanded_nodes': self.expanded_nodes,
                     'search_length': 0,
                     'error': 'Timeout exceeded'
@@ -188,8 +184,7 @@ class BFSSolver:
                 # Check if this is a winning state
                 if self._check_win(next_game):
                     self.end_time = time.time()
-                    peak_memory = process.memory_info().rss / (1024 ** 2)
-                    self.end_memory = peak_memory
+                    self.end_memory = process.memory_info().rss / (1024 ** 2)
                     
                     solution = path + [move]
                     self.search_length = len(solution)
@@ -198,7 +193,7 @@ class BFSSolver:
                         'solved': True,
                         'solution': solution,
                         'search_time': self.end_time - self.start_time,
-                        'memory_used': peak_memory - self.start_memory,
+                        'memory_used': self.end_memory - self.start_memory,
                         'expanded_nodes': self.expanded_nodes,
                         'search_length': self.search_length
                     }
@@ -212,17 +207,104 @@ class BFSSolver:
         
         # No solution found
         self.end_time = time.time()
-        peak_memory = process.memory_info().rss / (1024 ** 2)
-        self.end_memory = peak_memory
+        self.end_memory = process.memory_info().rss / (1024 ** 2)
         
         return {
             'solved': False,
             'solution': [],
             'search_time': self.end_time - self.start_time,
-            'memory_used': peak_memory - self.start_memory,
+            'memory_used': self.end_memory - self.start_memory,
             'expanded_nodes': self.expanded_nodes,
             'search_length': 0,
             'error': 'No solution found within node limit'
+        }
+    
+    def solve_with_animation(self, max_nodes=100000, timeout=300):
+        """
+        Solve FreeCell puzzle using BFS and yield moves for animation
+        
+        This is a generator version that yields each move as it's found
+        
+        Args:
+            max_nodes: Maximum nodes to explore
+            timeout: Time limit in seconds
+            
+        Yields:
+            dict: Move result containing 'move', 'game_state', 'status', 'progress'
+        """
+        self.start_time = time.time()
+        tracemalloc.start()
+        process = psutil.Process(os.getpid())
+        self.start_memory = process.memory_info().rss / (1024 ** 2)
+        
+        queue = deque()
+        initial_game = copy.deepcopy(self.initial_game)
+        initial_hash = self._get_game_state_hash(initial_game)
+        
+        if self._check_win(initial_game):
+            self.end_time = time.time()
+            self.end_memory = process.memory_info().rss / (1024 ** 2)
+            yield {
+                'status': 'solved',
+                'solution': [],
+                'search_time': self.end_time - self.start_time,
+                'memory_used': self.end_memory - self.start_memory,
+                'expanded_nodes': 1,
+                'search_length': 0
+            }
+            return
+        
+        queue.append((initial_game, []))
+        self.visited_states.add(initial_hash)
+        
+        while queue and self.expanded_nodes < max_nodes:
+            if time.time() - self.start_time > timeout:
+                yield {
+                    'status': 'timeout',
+                    'error': 'Timeout exceeded'
+                }
+                return
+            
+            current_game, path = queue.popleft()
+            self.expanded_nodes += 1
+            
+            valid_moves = self._get_valid_moves(current_game)
+            
+            for move in valid_moves:
+                from_id, to_id = move
+                next_game = copy.deepcopy(current_game)
+                self._apply_move(next_game, from_id, to_id)
+                
+                if self._check_win(next_game):
+                    self.end_time = time.time()
+                    self.end_memory = process.memory_info().rss / (1024 ** 2)
+                    solution = path + [move]
+                    self.search_length = len(solution)
+                    
+                    yield {
+                        'status': 'solved',
+                        'solution': solution,
+                        'search_time': self.end_time - self.start_time,
+                        'memory_used': self.end_memory - self.start_memory,
+                        'expanded_nodes': self.expanded_nodes,
+                        'search_length': self.search_length
+                    }
+                    return
+                
+                next_hash = self._get_game_state_hash(next_game)
+                if next_hash not in self.visited_states:
+                    self.visited_states.add(next_hash)
+                    new_path = path + [move]
+                    queue.append((next_game, new_path))
+        
+        self.end_time = time.time()
+        self.end_memory = process.memory_info().rss / (1024 ** 2)
+        
+        yield {
+            'status': 'failed',
+            'error': 'No solution found',
+            'expanded_nodes': self.expanded_nodes,
+            'search_time': self.end_time - self.start_time
         }
 
 
