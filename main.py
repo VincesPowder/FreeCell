@@ -5,6 +5,7 @@ import time
 from Freecell_Game import FreeCellGame
 from BFS_Solver import BFSSolver
 from A_Star_Solver import AStarSolver
+from DFS_Solver import IDSSolver
 import threading
 
 # --- CONFIGURATION ---
@@ -136,7 +137,7 @@ class WindowGame:
         """Run solver in background thread"""
         try:
             if solver_algo == "BFS":
-                solver = BFSSolver(self.freecell_game)
+                solver = IDSSolver(self.freecell_game)
                 # Note: BFS is slow for FreeCell due to large state space
                 # Even solvable games may take 5-10 minutes
                 # For faster solving, use A* instead
@@ -156,6 +157,28 @@ class WindowGame:
                 else:
                     error_msg = self.solver_result.get('error', 'No solution found')
                     self.log.append(f"BFS: {error_msg}")
+
+            elif solver_algo == "DFS":
+                solver = IDSSolver(self.freecell_game)
+                # Lưu ý: DFS có thể cần limit độ sâu (max_depth) để không chạy quá lâu
+                self.solver_result = solver.solve(max_depth=1000, timeout=300)
+                self.solver_selected = "DFS"
+                
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[DFS] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                    
+                    # Tự động chạy animation sau khi giải xong
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing DFS solution...")
+                else:
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"DFS: {error_msg}")
+
             elif solver_algo == "A*":
                 solver = AStarSolver(self.freecell_game)
                 # A* is much faster due to heuristic guidance
