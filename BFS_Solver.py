@@ -34,22 +34,24 @@ class BFSSolver:
         self.search_length = 0
         self.on_move_callback = on_move_callback  # Animation callback
         
-    def _get_game_state_hash(self, game):
+    def _get_game_state_hash(self, game_or_res):
         """
-        Create a hashable representation of the current game state
-        Using card positions (group_id and group_index for each card)
-        
-        Args:
-            game: FreeCellGame instance
-            
-        Returns:
-            str: hash string representing the state
+        Return a fixed-width hash string for a game or a raw observe list.
+
+        Accepts either a `FreeCellGame` instance or the `res` list returned
+        by `ObserveForData()`.
         """
-        state = []
-        for card in game.CARDS:
-            state.append(str(card.group_id))
-            state.append(str(card.group_index))
-        return "".join(state)
+        # If a FreeCellGame provided, use its ObserveForData to get canonical string
+        if hasattr(game_or_res, "ObserveForData"):
+            hash_index, _ = game_or_res.ObserveForData()
+            return hash_index
+
+        # Otherwise expect a flat list [group_id, group_index, ...]
+        res = game_or_res
+        parts = []
+        for i in range(0, len(res), 2):
+            parts.append("%02d%02d" % (int(res[i]), int(res[i + 1])))
+        return "".join(parts)
     
     def _check_win(self, game):
         """
@@ -124,30 +126,30 @@ class BFSSolver:
         # Record start metrics
         self.start_time = time.time()
         tracemalloc.start()
-        process = psutil.Process(os.getpid())
-        self.start_memory = process.memory_info().rss / (1024 ** 2)
+        # we'll use tracemalloc peak for measured memory
         
         # Initialize queue for BFS
         # Each item: (current_game_state, path=[list of moves])
         queue = deque()
-        initial_game = copy.deepcopy(self.initial_game)
-        initial_hash = self._get_game_state_hash(initial_game)
-        
+        # Use ObserveForData() to get canonical hash and compact representation
+        initial_hash, initial_res = self.initial_game.ObserveForData()
+
         # Check if initial state is already a winning state
-        if self._check_win(initial_game):
+        if self._check_win(self.initial_game):
             self.end_time = time.time()
-            self.end_memory = process.memory_info().rss / (1024 ** 2)
+            current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
             return {
                 'solved': True,
                 'solution': [],
                 'search_time': self.end_time - self.start_time,
-                'memory_used': self.end_memory - self.start_memory,
+                'memory_used': peak / (1024 ** 2),
                 'expanded_nodes': 1,
                 'search_length': 0
             }
-        
-        # Add initial state to queue and visited set
-        queue.append((initial_game, []))
+
+        # Add initial state to queue and visited set. Store only compact `res` lists.
+        queue.append((initial_res, []))
         self.visited_states.add(initial_hash)
         
         # BFS main loop
@@ -166,54 +168,61 @@ class BFSSolver:
                     'error': 'Timeout exceeded'
                 }
             
-            # Pop next state from queue
-            current_game, path = queue.popleft()
+            # Pop next state from queue (we store compact `res` lists, not full game objects)
+            current_res, path = queue.popleft()
             self.expanded_nodes += 1
-            
+
+            # Reconstruct a FreeCellGame for move generation from the compact representation
+            current_game = FreeCellGame()
+            current_game.ParseDataObserve(current_res)
+
             # Get valid moves from current state
             valid_moves = self._get_valid_moves(current_game)
-            
+
             # Try each valid move
             for move in valid_moves:
                 from_id, to_id = move
-                
-                # Create new game state with this move
-                next_game = copy.deepcopy(current_game)
+
+                # Reconstruct game for this child move, apply move, then get its compact res
+                next_game = FreeCellGame()
+                next_game.ParseDataObserve(current_res)
                 self._apply_move(next_game, from_id, to_id)
-                
+
                 # Check if this is a winning state
                 if self._check_win(next_game):
                     self.end_time = time.time()
-                    self.end_memory = process.memory_info().rss / (1024 ** 2)
-                    
+                    current, peak = tracemalloc.get_traced_memory()
+                    tracemalloc.stop()
+
                     solution = path + [move]
                     self.search_length = len(solution)
-                    
+
                     return {
                         'solved': True,
                         'solution': solution,
                         'search_time': self.end_time - self.start_time,
-                        'memory_used': self.end_memory - self.start_memory,
+                        'memory_used': peak / (1024 ** 2),
                         'expanded_nodes': self.expanded_nodes,
                         'search_length': self.search_length
                     }
-                
-                # Check if state has been visited
-                next_hash = self._get_game_state_hash(next_game)
+
+                # Get compact representation and check visited
+                next_hash, next_res = next_game.ObserveForData()
                 if next_hash not in self.visited_states:
                     self.visited_states.add(next_hash)
                     new_path = path + [move]
-                    queue.append((next_game, new_path))
+                    queue.append((next_res, new_path))
         
         # No solution found
         self.end_time = time.time()
-        self.end_memory = process.memory_info().rss / (1024 ** 2)
-        
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
         return {
             'solved': False,
             'solution': [],
             'search_time': self.end_time - self.start_time,
-            'memory_used': self.end_memory - self.start_memory,
+            'memory_used': peak / (1024 ** 2),
             'expanded_nodes': self.expanded_nodes,
             'search_length': 0,
             'error': 'No solution found within node limit'
@@ -234,27 +243,25 @@ class BFSSolver:
         """
         self.start_time = time.time()
         tracemalloc.start()
-        process = psutil.Process(os.getpid())
-        self.start_memory = process.memory_info().rss / (1024 ** 2)
-        
+
         queue = deque()
-        initial_game = copy.deepcopy(self.initial_game)
-        initial_hash = self._get_game_state_hash(initial_game)
-        
-        if self._check_win(initial_game):
+        initial_hash, initial_res = self.initial_game.ObserveForData()
+
+        if self._check_win(self.initial_game):
             self.end_time = time.time()
-            self.end_memory = process.memory_info().rss / (1024 ** 2)
+            current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
             yield {
                 'status': 'solved',
                 'solution': [],
                 'search_time': self.end_time - self.start_time,
-                'memory_used': self.end_memory - self.start_memory,
+                'memory_used': peak / (1024 ** 2),
                 'expanded_nodes': 1,
                 'search_length': 0
             }
             return
-        
-        queue.append((initial_game, []))
+
+        queue.append((initial_res, []))
         self.visited_states.add(initial_hash)
         
         while queue and self.expanded_nodes < max_nodes:
@@ -265,46 +272,53 @@ class BFSSolver:
                 }
                 return
             
-            current_game, path = queue.popleft()
+            current_res, path = queue.popleft()
             self.expanded_nodes += 1
-            
+
+            current_game = FreeCellGame()
+            current_game.ParseDataObserve(current_res)
+
             valid_moves = self._get_valid_moves(current_game)
-            
+
             for move in valid_moves:
                 from_id, to_id = move
-                next_game = copy.deepcopy(current_game)
+                next_game = FreeCellGame()
+                next_game.ParseDataObserve(current_res)
                 self._apply_move(next_game, from_id, to_id)
-                
+
                 if self._check_win(next_game):
                     self.end_time = time.time()
-                    self.end_memory = process.memory_info().rss / (1024 ** 2)
+                    current, peak = tracemalloc.get_traced_memory()
+                    tracemalloc.stop()
                     solution = path + [move]
                     self.search_length = len(solution)
-                    
+
                     yield {
                         'status': 'solved',
                         'solution': solution,
                         'search_time': self.end_time - self.start_time,
-                        'memory_used': self.end_memory - self.start_memory,
+                        'memory_used': peak / (1024 ** 2),
                         'expanded_nodes': self.expanded_nodes,
                         'search_length': self.search_length
                     }
                     return
-                
-                next_hash = self._get_game_state_hash(next_game)
+
+                next_hash, next_res = next_game.ObserveForData()
                 if next_hash not in self.visited_states:
                     self.visited_states.add(next_hash)
                     new_path = path + [move]
-                    queue.append((next_game, new_path))
+                    queue.append((next_res, new_path))
         
         self.end_time = time.time()
-        self.end_memory = process.memory_info().rss / (1024 ** 2)
-        
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
         yield {
             'status': 'failed',
             'error': 'No solution found',
             'expanded_nodes': self.expanded_nodes,
-            'search_time': self.end_time - self.start_time
+            'search_time': self.end_time - self.start_time,
+            'memory_used': peak / (1024 ** 2)
         }
 
 
