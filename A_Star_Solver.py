@@ -99,8 +99,6 @@ class AStarSolver:
     def solve(self, max_nodes=100000, timeout=300):
         self.start_time = time.time()
         tracemalloc.start()
-        process = psutil.Process(os.getpid())
-        self.start_memory = process.memory_info().rss / (1024 ** 2)
         
         open_set = []
         counter = 0 
@@ -113,7 +111,7 @@ class AStarSolver:
         initial_hash = self._get_game_state_hash(current_game)
         
         if self._check_win(current_game):
-            self._finalize_metrics(process)
+            self._finalize_metrics()
             return self._build_result(True, [], 1)
         
         h_initial = self._heuristic(current_game)
@@ -123,7 +121,7 @@ class AStarSolver:
         
         while open_set and self.expanded_nodes < max_nodes:
             if time.time() - self.start_time > timeout:
-                self._finalize_metrics(process)
+                self._finalize_metrics()
                 return self._build_result(False, [], self.expanded_nodes, 'Timeout exceeded')
             
             f_score, _, path, g_score = heappop(open_set)
@@ -155,7 +153,7 @@ class AStarSolver:
                 current_game.Move(from_id, to_id)
                 
                 if self._check_win(current_game):
-                    self._finalize_metrics(process)
+                    self._finalize_metrics()
                     return self._build_result(True, path + [move], self.expanded_nodes)
                 
                 next_hash = self._get_game_state_hash(current_game)
@@ -172,19 +170,23 @@ class AStarSolver:
                 # Lùi 1 bước (Backtrack) để thử nước cờ khác cùng node
                 current_game.Move(to_id, from_id)
         
-        self._finalize_metrics(process)
+        self._finalize_metrics()
         return self._build_result(False, [], self.expanded_nodes, 'No solution found within node limit')
 
-    def _finalize_metrics(self, process):
+    def _finalize_metrics(self):
+        # Stop and collect tracemalloc peak memory and time
         self.end_time = time.time()
-        self.end_memory = process.memory_info().rss / (1024 ** 2)
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        # report peak in MB
+        self.end_memory = peak / (1024 ** 2)
 
     def _build_result(self, solved, solution, nodes, error=None):
         res = {
             'solved': solved,
             'solution': solution,
             'search_time': self.end_time - self.start_time if self.end_time else 0,
-            'memory_used': self.end_memory - self.start_memory if self.end_memory else 0,
+            'memory_used': self.end_memory if self.end_memory else 0,
             'expanded_nodes': nodes,
             'search_length': len(solution)
         }

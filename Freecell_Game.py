@@ -486,14 +486,17 @@ class FreeCellGame:
         
         return (1 + empty_free_cells) * (2 ** empty_columns)
 
-    # Cập nhật CheckMove để hỗ trợ kiểm tra cả dây bài
     def CheckMoveSequence(self, come_id, to_id, card_index):
         heap_from = self.card_heaps[come_id].heap_list
         sub_stack = heap_from[card_index:]
         
-        # 1. Kiểm tra dây bài định kéo có đúng quy tắc (giảm dần, khác màu) không
+        # --- NEW RULE: ONLY 1 CARD TO FOUNDATION OR FREECELL ---
+        if to_id < 8 and len(sub_stack) > 1:
+            return False, "Can only move 1 card to Foundation or FreeCell!"
+
+        # 1. Check if the sequence to be moved follows the rules (decreasing, alternating colors)
         if not self.IsValidSequence(sub_stack):
-            return False, "Dây bài không hợp lệ (phải khác màu và giảm dần)!"
+            return False, "Invalid sequence (must be alternating colors and decreasing)!"
             
         # 2. Check if there are enough free cells to move
         max_allowed = self.GetMaxMovable(come_id, len(sub_stack))
@@ -506,9 +509,6 @@ class FreeCellGame:
             return True, ""
         
         return False, "Card does not fit the target column!"
-
-
-# %%
 
 
 class SearchNode:
