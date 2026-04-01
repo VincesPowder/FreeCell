@@ -6,6 +6,7 @@ from Freecell_Game import FreeCellGame
 from BFS_Solver import BFSSolver
 from A_Star_Solver import AStarSolver
 from IDS_Solver import IDSSolver
+from UCS_Solver import UCSSolver
 from test_cases import TestCases
 import threading
 import random
@@ -183,6 +184,12 @@ class WindowGame:
                 else:
                     error_msg = self.solver_result.get('error', 'No solution found')
                     self.log.append(f"IDS: {error_msg}")
+
+            elif solver_algo == "UCS":
+                solver = UCSSolver(self.freecell_game)
+                # UCS tìm đường đi ngắn nhất nên timeout cần để cao một chút
+                self.solver_result = solver.solve(max_nodes=500000, timeout=300)
+                self.solver_selected = "UCS"
 
             elif solver_algo == "A*":
                 solver = AStarSolver(self.freecell_game)
