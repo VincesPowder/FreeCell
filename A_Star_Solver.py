@@ -1,19 +1,10 @@
-"""
-A* Solver for FreeCell Game
-Implement A* Search algorithm with highly optimized Single-Object Delta Replay
-"""
-
 import time
 import tracemalloc
-import psutil
-import os
 import copy
 from heapq import heappush, heappop
 from Freecell_Game import FreeCellGame
 
 class AStarSolver:
-    """A* Solver for FreeCell Game"""
-    
     def __init__(self, game_state, on_move_callback=None):
         self.initial_game_source = game_state
         self.visited_states = set()
@@ -24,7 +15,6 @@ class AStarSolver:
         self.end_memory = None
         
     def _get_game_state_hash(self, game):
-        # TỐI ƯU 1: Dùng Tuple Hash cực nhẹ thay vì String Formatting
         return tuple((c.group_id, c.group_index) for c in game.CARDS)
     
     def _check_win(self, game):
@@ -51,32 +41,48 @@ class AStarSolver:
             if len(heap_from) == 0:
                 continue
                 
-            for to_id in range(16):
-                if from_id == to_id:
-                    continue
+            start_indices = range(len(heap_from)) if from_id >= 8 else [len(heap_from) - 1]
+            
+            for card_idx in start_indices:
+                num_cards = len(heap_from) - card_idx
+                for to_id in range(16):
+                    if from_id == to_id: continue
                     
-                # Thu thập các bước đưa lên Foundation
-                if 0 <= to_id <= 3:
-                    if game.CheckMove(from_id, to_id):
-                        foundation_moves.append((from_id, to_id))
-                    continue
+                    if 4 <= from_id <= 7 and 4 <= to_id <= 7: continue
+                    if 8 <= from_id <= 15 and num_cards == 1 and 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0: continue
+                    if 4 <= to_id <= 7 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_fc: continue
+                    if 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_cas: continue
                     
-                # LUẬT CẮT TỈA (PRUNING)
-                if 4 <= from_id <= 7 and 4 <= to_id <= 7: continue
-                if 8 <= from_id <= 15 and len(heap_from) == 1 and 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0: continue
-                if 4 <= to_id <= 7 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_fc: continue
-                if 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_cas: continue
-                
-                if game.CheckMove(from_id, to_id):
-                    valid_moves.append((from_id, to_id))
+                    can_move, _ = game.CheckMoveSequence(from_id, to_id, card_idx)
+                    if can_move:
+                        move = (from_id, to_id, card_idx, num_cards)
+                        if 0 <= to_id <= 3:
+                            foundation_moves.append(move)
+                        else:
+                            valid_moves.append(move)
                     
-        # TỐI ƯU 2: CHIẾN THUẬT GREEDY FOUNDATION
-        # Nếu có bước cờ đẩy được lên nóc, CHỈ trả về bước đó để cắt bớt 99% nhánh vô nghĩa
         if foundation_moves:
             return foundation_moves
-            
         return valid_moves
     
+    def _apply_move(self, game, move):
+        from_id, to_id, card_idx, num_cards = move
+        cards_to_move = game.card_heaps[from_id].heap_list[-num_cards:]
+        game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
+        game.card_heaps[to_id].heap_list.extend(cards_to_move)
+        for i, card in enumerate(game.card_heaps[to_id].heap_list):
+            card.group_id = to_id
+            card.group_index = i
+            
+    def _undo_move(self, game, move):
+        from_id, to_id, card_idx, num_cards = move
+        cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
+        game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
+        game.card_heaps[from_id].heap_list.extend(cards_to_undo)
+        for i, card in enumerate(game.card_heaps[from_id].heap_list):
+            card.group_id = from_id
+            card.group_index = i
+
     def _heuristic(self, game):
         h = 0
         cards_in_foundation = sum(len(game.card_heaps[i].heap_list) for i in range(4))
@@ -96,23 +102,20 @@ class AStarSolver:
         
         return max(h, 0)
     
-    def solve(self, max_nodes=100000, timeout=300):
+    def solve(self, max_nodes=100000, timeout=60):
         self.start_time = time.time()
         tracemalloc.start()
         
         open_set = []
         counter = 0 
         
-        # TỐI ƯU 3: SINGLE-OBJECT DELTA REPLAY
-        # Dùng duy nhất 1 object trong suốt vòng đời duyệt, dẹp bỏ hoàn toàn việc Deepcopy!
         current_game = copy.deepcopy(self.initial_game_source)
         current_path = []
         
         initial_hash = self._get_game_state_hash(current_game)
         
         if self._check_win(current_game):
-            self._finalize_metrics()
-            return self._build_result(True, [], 1)
+            return self._build_result(True, [])
         
         h_initial = self._heuristic(current_game)
         heappush(open_set, (h_initial, counter, [], 0))
@@ -121,40 +124,33 @@ class AStarSolver:
         
         while open_set and self.expanded_nodes < max_nodes:
             if time.time() - self.start_time > timeout:
-                self._finalize_metrics()
-                return self._build_result(False, [], self.expanded_nodes, 'Timeout exceeded')
+                return self._build_result(False, [], 'Timeout exceeded')
             
             f_score, _, path, g_score = heappop(open_set)
             self.expanded_nodes += 1
             
-            # TÁI TẠO TRẠNG THÁI BẰNG DIFF (UNDO/REDO)
+            # Khôi phục trạng thái
             common_len = 0
             for m1, m2 in zip(current_path, path):
                 if m1 == m2: common_len += 1
                 else: break
                     
-            # Undo các nước cờ dư thừa
             for move in reversed(current_path[common_len:]):
-                current_game.Move(move[1], move[0]) # Đảo ngược to_id và from_id
+                self._undo_move(current_game, move)
                 
-            # Áp dụng các nước cờ mới
             for move in path[common_len:]:
-                current_game.Move(move[0], move[1])
+                self._apply_move(current_game, move)
                 
             current_path = path
             
-            # Sinh nước đi mới
             valid_moves = self._get_valid_moves(current_game)
             
             for move in valid_moves:
-                from_id, to_id = move
-                
-                # Tiến 1 bước
-                current_game.Move(from_id, to_id)
+                self._apply_move(current_game, move)
                 
                 if self._check_win(current_game):
-                    self._finalize_metrics()
-                    return self._build_result(True, path + [move], self.expanded_nodes)
+                    final_path = path + [move]
+                    return self._build_result(True, final_path)
                 
                 next_hash = self._get_game_state_hash(current_game)
                 if next_hash not in self.visited_states:
@@ -162,33 +158,31 @@ class AStarSolver:
                     
                     new_g_score = g_score + 1
                     h_score = self._heuristic(current_game)
-                    f_new_score = new_g_score + (3.0 * h_score) # Trọng số A*
+                    f_new_score = new_g_score + (3.0 * h_score) 
                     
                     heappush(open_set, (f_new_score, counter, path + [move], new_g_score))
                     counter += 1
                 
-                # Lùi 1 bước (Backtrack) để thử nước cờ khác cùng node
-                current_game.Move(to_id, from_id)
+                self._undo_move(current_game, move)
         
-        self._finalize_metrics()
-        return self._build_result(False, [], self.expanded_nodes, 'No solution found within node limit')
+        return self._build_result(False, [], 'No solution found within node limit')
 
-    def _finalize_metrics(self):
-        # Stop and collect tracemalloc peak memory and time
+    def _build_result(self, solved, solution, error=None):
         self.end_time = time.time()
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        # report peak in MB
         self.end_memory = peak / (1024 ** 2)
+        
+        # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
+        formatted_solution = [(m[0], m[1], m[2]) for m in solution]
 
-    def _build_result(self, solved, solution, nodes, error=None):
         res = {
             'solved': solved,
-            'solution': solution,
+            'solution': formatted_solution,
             'search_time': self.end_time - self.start_time if self.end_time else 0,
             'memory_used': self.end_memory if self.end_memory else 0,
-            'expanded_nodes': nodes,
-            'search_length': len(solution)
+            'expanded_nodes': self.expanded_nodes,
+            'search_length': len(formatted_solution)
         }
         if error: res['error'] = error
         return res
