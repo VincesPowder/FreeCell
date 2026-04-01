@@ -21,7 +21,7 @@ PANEL_Y = 600
 
 pygame.init()
 SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("FreeCell")
+pygame.display.set_caption("FreeCell & Solver")
 
 IMAGES = utils.LoadImages()
 FONT = pygame.font.SysFont('arial', 16)
@@ -527,19 +527,23 @@ class WindowGame:
 
         # Thanh tiến trình animation
         if self.animation_running or self.animation_moves:
-            status_rect = pygame.Rect(50, 10, 600, 20)
-            pygame.draw.rect(SCREEN, (100, 150, 150), status_rect)
-            pygame.draw.rect(SCREEN, (255, 255, 255), status_rect, 2)
+            bar_x = X_START + GAP*2
+            bar_y = 12
+            bar_w = GAP * 3 + CARD_W
+            bar_h = 20
             
+            status_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
+            pygame.draw.rect(SCREEN, (255, 200, 230), status_rect, border_radius=5)
+            pygame.draw.rect(SCREEN, (155, 50, 100), status_rect, 1, border_radius=5)
             if self.animation_moves:
                 progress = self.animation_current_move / len(self.animation_moves) if self.animation_moves else 0
-                progress_width = int(598 * progress)
-                progress_rect = pygame.Rect(51, 11, progress_width, 18)
-                pygame.draw.rect(SCREEN, (100, 200, 100), progress_rect)
-                
+                progress_width = int((bar_w - 2) * progress)                
+                if progress_width > 0:
+                    progress_rect = pygame.Rect(bar_x + 1, bar_y + 1, progress_width, bar_h - 2)
+                    pygame.draw.rect(SCREEN, (200, 230, 150), progress_rect, border_radius=4)               
                 status_text = f"Animation: {self.animation_current_move}/{len(self.animation_moves)} moves"
-                status_surf = FONT.render(status_text, True, (255, 255, 255))
-                SCREEN.blit(status_surf, (60, 12))
+                status_surf = FONT.render(status_text, True, (155, 50, 100))
+                SCREEN.blit(status_surf, status_surf.get_rect(center=status_rect.center))
 
         pygame.display.update()
 
