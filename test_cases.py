@@ -68,9 +68,6 @@ class TestCases:
         game.card_heaps[8].PushTop(cards[22]) # 10 Diamond
         game.card_heaps[8].PushTop(cards[34]) # 9 Spade
         game.card_heaps[8].PushTop(cards[21]) # 9 Diamond (Đang bị kẹt)
-        # Thêm 9 Cơ và 9 Nhép vào 2 cột riêng (đủ 4 lá 9)
-        game.card_heaps[12].PushTop(cards[8])  # 9 Heart
-        game.card_heaps[13].PushTop(cards[47]) # 9 Club
         # Các lá còn lại (10, J, Q, K) rải rác
         for i in range(4):
             for r in [12, 11, 10, 9]:

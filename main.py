@@ -106,7 +106,6 @@ class WindowGame:
         moves_to_play = int(elapsed / self.move_duration)
         
         while self.animation_current_move < moves_to_play and self.animation_current_move < len(self.animation_moves):
-            # --- CHỈ CHỈNH SỬA TỪ ĐÂY ---
             move = self.animation_moves[self.animation_current_move]
             from_id, to_id, card_idx = move # Lấy 3 giá trị
             
@@ -119,7 +118,6 @@ class WindowGame:
                 self.freecell_game.card_heaps[to_id].PushTop(card)
                 
             self.log.append(f"[Animation] Move {self.animation_current_move + 1}/{len(self.animation_moves)}: Heap {from_id} → {to_id}")
-            # --- ĐẾN ĐÂY ---
 
             self.log_offset = 0
             self.animation_current_move += 1
@@ -165,7 +163,6 @@ class WindowGame:
 
             elif solver_algo == "IDS":
                 solver = IDSSolver(self.freecell_game)
-                # Lưu ý: IDS có thể cần limit độ sâu (max_depth) để không chạy quá lâu
                 self.solver_result = solver.solve(max_depth=1000, timeout=300)
                 self.solver_selected = "IDS"
                 
@@ -203,7 +200,7 @@ class WindowGame:
                 f"  Memory used: {self.solver_result.get('memory_used', 0):.2f}MB"
             ]
             
-            # --- ĐOẠN CODE MỚI: GHI LOG VÀO FILE log.txt ---
+            # --- GHI LOG VÀO FILE log.txt ---
             try:
                 import datetime
                 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -89,7 +89,7 @@ class IDSSolver:
 
         return None
 
-    def solve(self, max_depth=100, timeout=300):
+    def solve(self, max_depth=500, timeout=300):
         self.start_time = time.time()
         tracemalloc.start()
         process = psutil.Process(os.getpid())
