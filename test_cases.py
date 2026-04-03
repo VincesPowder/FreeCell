@@ -101,6 +101,47 @@ class TestCases:
             for r in [12, 11, 10, 9]:
                 if cards[i * 13 + r].group_id == -1: # Nếu chưa xếp
                     game.card_heaps[9 + i].PushTop(cards[i * 13 + r])
+                    
+    @staticmethod
+    def setup_test_5(game: FreeCellGame):
+        """Mức 5: Harder Partial (20 lá) - Đã xếp xong từ A -> 8, trộn ngẫu nhiên 20 lá còn lại (9 -> K)."""
+        # max_foundation_rank = 8 tương đương với việc cất 8 lá (A đến 8) của mỗi chất
+        TestCases._setup_partial_game(game, max_foundation_rank=8, seed=505)
+
+    @staticmethod
+    def setup_test_6(game: FreeCellGame):
+        """Mức 6: Harder Partial (24 lá) - Đã xếp xong từ A -> 7, trộn ngẫu nhiên 24 lá còn lại (8 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=7, seed=606)
+
+    @staticmethod
+    def setup_test_7(game: FreeCellGame):
+        """Mức 7: Advanced Partial (28 lá) - Đã xếp xong từ A -> 6, trộn ngẫu nhiên 28 lá còn lại (7 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=6, seed=707)
+
+    @staticmethod
+    def setup_test_8(game: FreeCellGame):
+        """Mức 8: Advanced Partial (32 lá) - Đã xếp xong từ A -> 5, trộn ngẫu nhiên 32 lá còn lại (6 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=5, seed=808)
+
+    @staticmethod
+    def setup_test_9(game: FreeCellGame):
+        """Mức 9: Expert Partial (36 lá) - Đã xếp xong từ A -> 4, trộn ngẫu nhiên 36 lá còn lại (5 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=4, seed=909)
+
+    @staticmethod
+    def setup_test_10(game: FreeCellGame):
+        """Mức 10: Expert Partial (40 lá) - Đã xếp xong từ A -> 3, trộn ngẫu nhiên 40 lá còn lại (4 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=3, seed=1010)
+
+    @staticmethod
+    def setup_test_11(game: FreeCellGame):
+        """Mức 11: Master Partial (44 lá) - Đã xếp xong từ A -> 2, trộn ngẫu nhiên 44 lá còn lại (3 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=2, seed=1111)
+
+    @staticmethod
+    def setup_test_12(game: FreeCellGame):
+        """Mức 12: Master Partial (48 lá) - Đã xếp xong các lá A, trộn ngẫu nhiên 48 lá còn lại (2 -> K)."""
+        TestCases._setup_partial_game(game, max_foundation_rank=1, seed=1212)
 
     @staticmethod
     def setup_test_13(game: FreeCellGame):

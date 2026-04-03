@@ -31,6 +31,15 @@ BTN_FONT = pygame.font.SysFont('arial', 16)
 
 class WindowGame:
     def __init__(self):
+        try:
+            with open("log.txt", "w", encoding="utf-8") as f:
+                f.write("=== FreeCell Solver Log ===\n")
+        except: pass
+        self.freecell_game = FreeCellGame()
+        if not hasattr(self, 'seed'):
+            self.seed = random.randint(0, 32000)
+            
+    def __init__(self):
         self.freecell_game = FreeCellGame()
         if not hasattr(self, 'seed'):
             self.seed = random.randint(0, 32000)
@@ -50,16 +59,18 @@ class WindowGame:
         self.log_offset = 0  
         self.button_highlight_time = {}  
         self.highlight_duration = 0.15  
+        self.stop_event = threading.Event()
         
         # Cập nhật vị trí các nút: Test nằm dưới Seed
         self.buttons = {
             "New": pygame.Rect(800, PANEL_Y + 20, 90, 35),
             "Restart": pygame.Rect(900, PANEL_Y + 20, 90, 35),
-            "Undo": pygame.Rect(1000, PANEL_Y + 20, 90, 35),
+            "Solver": pygame.Rect(1000, PANEL_Y + 20, 90, 35),
             "Seed": pygame.Rect(1100, PANEL_Y + 20, 90, 35),
-            "Test": pygame.Rect(1100, PANEL_Y + 60, 90, 35),
-            "Solver": pygame.Rect(900, PANEL_Y + 60, 90, 35),
-            "Quit": pygame.Rect(1000, PANEL_Y + 60, 90, 35),
+            "Stop": pygame.Rect(800, PANEL_Y + 60, 90, 35),
+           "Undo": pygame.Rect(900, PANEL_Y + 60, 90, 35),
+            "Test": pygame.Rect(1000, PANEL_Y + 60, 90, 35),
+            "Quit": pygame.Rect(1100, PANEL_Y + 60, 90, 35),
         }
         
         self.seed_input_open = False
@@ -67,10 +78,10 @@ class WindowGame:
         
         self.solver_menu_open = False
         self.solver_menu = {
-            "BFS": pygame.Rect(900, PANEL_Y - 120, 90, 30),
-            "IDS": pygame.Rect(900, PANEL_Y - 90, 90, 30),
-            "UCS": pygame.Rect(900, PANEL_Y - 60, 90, 30),
-            "A*": pygame.Rect(900, PANEL_Y - 30, 90, 30),
+            "BFS": pygame.Rect(1000, PANEL_Y - 120, 90, 30),
+            "IDS": pygame.Rect(1000, PANEL_Y - 90, 90, 30),
+            "UCS": pygame.Rect(1000, PANEL_Y - 60, 90, 30),
+            "A*": pygame.Rect(1000, PANEL_Y - 30, 90, 30),
         }
         
         self.test_menu_open = False
@@ -144,62 +155,23 @@ class WindowGame:
         try:
             if solver_algo == "BFS":
                 solver = BFSSolver(self.freecell_game)
-                # Note: BFS is slow for FreeCell due to large state space
-                # Even solvable games may take 5-10 minutes
-                # For faster solving, use A* instead
-                self.solver_result = solver.solve(max_nodes=1000000, timeout=600)
-                self.solver_selected = "BFS"
-                
-                if self.solver_result['solved'] and self.solver_result['solution']:
-                    self.log.append(f"[BFS] Solved in {self.solver_result['search_length']} moves!")
-                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
-                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
-                    # Store solution and auto-start animation
-                    self.animation_moves = self.solver_result['solution']
-                    self.animation_running = True
-                    self.animation_current_move = 0
-                    self.animation_start_time = time.time()
-                    self.log.append(f"🎬 Playing animation...")
-                else:
-                    error_msg = self.solver_result.get('error', 'No solution found')
-                    self.log.append(f"BFS: {error_msg}")
-
+                self.solver_result = solver.solve(max_nodes=1000000, timeout=600, stop_event=self.stop_event)
             elif solver_algo == "IDS":
                 solver = IDSSolver(self.freecell_game)
-                # Lưu ý: IDS có thể cần limit độ sâu (max_depth) để không chạy quá lâu
-                self.solver_result = solver.solve(max_depth=1000, timeout=300)
-                self.solver_selected = "IDS"
-                
-                if self.solver_result['solved'] and self.solver_result['solution']:
-                    self.log.append(f"[IDS] Solved in {self.solver_result['search_length']} moves!")
-                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
-                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
-                    
-                    # Tự động chạy animation sau khi giải xong
-                    self.animation_moves = self.solver_result['solution']
-                    self.animation_running = True
-                    self.animation_current_move = 0
-                    self.animation_start_time = time.time()
-                    self.log.append(f"🎬 Playing IDS solution...")
-                else:
-                    error_msg = self.solver_result.get('error', 'No solution found')
-                    self.log.append(f"IDS: {error_msg}")
-
+                self.solver_result = solver.solve(max_depth=1000, timeout=300, stop_event=self.stop_event)
             elif solver_algo == "UCS":
                 solver = UCSSolver(self.freecell_game)
-                # UCS tìm đường đi ngắn nhất nên timeout cần để cao một chút
-                self.solver_result = solver.solve(max_nodes=500000, timeout=300)
-                self.solver_selected = "UCS"
-
+                self.solver_result = solver.solve(max_nodes=500000, timeout=300, stop_event=self.stop_event)
             elif solver_algo == "A*":
                 solver = AStarSolver(self.freecell_game)
-                self.solver_result = solver.solve(max_nodes=100000, timeout=60)
-                self.solver_selected = "A*"
+                self.solver_result = solver.solve(max_nodes=100000, timeout=60, stop_event=self.stop_event)
             else:
                 self.log.append(f"{solver_algo} solver not implemented yet")
                 self.log_offset = 0
                 self.solver_running = False
                 return
+
+            self.solver_selected = solver_algo
 
             results_log = [
                 "Results:",
@@ -210,7 +182,6 @@ class WindowGame:
                 f"  Memory used: {self.solver_result.get('memory_used', 0):.2f}MB"
             ]
             
-            # --- ĐOẠN CODE MỚI: GHI LOG VÀO FILE log.txt ---
             try:
                 import datetime
                 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -224,21 +195,21 @@ class WindowGame:
                     log_file.write("-" * 40 + "\n")
             except Exception as file_err:
                 self.log.append(f"Warning: Cannot write to log.txt ({file_err})")
-                self.log_offset = 0
 
             if self.solver_result.get('solved') and self.solver_result.get('solution'):
+                self.log.append(f"[{solver_algo}] Solved in {self.solver_result['search_length']} moves!")
                 self.pending_solver_results = results_log
                 self.animation_moves = self.solver_result['solution']
                 self.animation_current_move = 0
                 self.animation_start_time = time.time()
                 self.animation_running = True
-                self.log.append(f"Playing animation...")
-                self.log_offset = 0
+                self.log.append("Playing animation...")
             else:
                 error_msg = self.solver_result.get('error', 'No solution found')
                 self.log.append(f"{solver_algo}: {error_msg}")
                 self.log.extend(results_log)
-                self.log_offset = 0
+                
+            self.log_offset = 0
                 
         except Exception as e:
             self.log.append(f"Error running {solver_algo}: {str(e)}")
@@ -259,8 +230,8 @@ class WindowGame:
         if self.test_menu_open:
             visible_tests = list(self.test_menu.keys())[self.test_menu_scroll_offset:self.test_menu_scroll_offset + self.max_visible_tests]
             for idx, test_name in enumerate(visible_tests):
-                # Đã chỉnh về x=1100 để khớp với giao diện vẽ
-                test_rect = pygame.Rect(1100, PANEL_Y - 30 - idx * 30, 90, 30)
+                # Hiển thị đúng chiều từ trên xuống dưới
+                test_rect = pygame.Rect(1000, (PANEL_Y - 120) + idx * 30, 90, 30)
                 if test_rect.collidepoint(pos):
                     return test_name, -1
         
@@ -325,14 +296,14 @@ class WindowGame:
                     # Phân biệt nút cuộn và nút click
                     if event.button == 4:  # Scroll up
                         # Nếu chuột đang ở vùng menu Test thì cuộn Test
-                        test_menu_area = pygame.Rect(1100, PANEL_Y - 150, 110, 150)
+                        test_menu_area = pygame.Rect(1000, PANEL_Y - 150, 110, 150)
                         if self.test_menu_open and test_menu_area.collidepoint(event.pos):
                             self.test_menu_scroll_offset = max(0, self.test_menu_scroll_offset - 1)
                         else:
                             self.log_offset = min(self.log_offset + 1, max(0, len(self.log) - 4))
                             
                     elif event.button == 5:  # Scroll down
-                        test_menu_area = pygame.Rect(1100, PANEL_Y - 150, 110, 150)
+                        test_menu_area = pygame.Rect(1000, PANEL_Y - 150, 110, 150)
                         if self.test_menu_open and test_menu_area.collidepoint(event.pos):
                             max_offset = max(0, len(self.test_menu) - self.max_visible_tests)
                             self.test_menu_scroll_offset = min(self.test_menu_scroll_offset + 1, max_offset)
@@ -369,8 +340,17 @@ class WindowGame:
                                 self.solver_menu_open = not self.solver_menu_open
                                 self.seed_input_open = False
                                 self.test_menu_open = False
+                            elif p_id == "Stop":
+                                if self.solver_running:
+                                    self.stop_event.set() # Bật cờ yêu cầu dừng thread
+                                    self.log_offset = 0
+                                elif self.animation_running:
+                                    self.stop_animation()
+                                self.button_highlight_time["Stop"] = time.time()
+                                
                             elif p_id in ["BFS", "IDS", "UCS", "A*"]:
                                 if not self.solver_running:
+                                    self.stop_event.clear() # Đặt lại cờ (xóa tín hiệu dừng) trước khi chạy mới
                                     self.solver_running = True
                                     self.solver_menu_open = False
                                     self.log.append(f"Running {p_id} solver...")
@@ -504,8 +484,9 @@ class WindowGame:
         if self.test_menu_open:
             visible_tests = list(self.test_menu.keys())[self.test_menu_scroll_offset:self.test_menu_scroll_offset + self.max_visible_tests]
             for idx, test_name in enumerate(visible_tests):
-                # Menu hiện phía trên nút Test
-                test_rect = pygame.Rect(1100, PANEL_Y - 30 - idx * 30, 90, 30)
+                # Hiển thị đúng chiều từ trên xuống dưới
+                test_rect = pygame.Rect(1000, (PANEL_Y - 120) + idx * 30, 90, 30)
+                
                 test_num = self.test_menu[test_name]
                 color = (200, 230, 150) if self.seed == -test_num else (255, 200, 230)
                 pygame.draw.rect(SCREEN, color, test_rect, border_radius=4)
@@ -517,7 +498,7 @@ class WindowGame:
             # Vẽ thanh cuộn khớp với các nút Test
             if len(self.test_menu) > self.max_visible_tests:
                 scroll_bar_width = 8
-                scroll_bar_x = 1100 + 90 + 2 # Sát bên phải menu
+                scroll_bar_x = 1000 + 90 + 2 # Sát bên phải menu
                 total_menu_h = self.max_visible_tests * 30
                 scroll_bar_y = PANEL_Y - total_menu_h
                 
@@ -527,8 +508,8 @@ class WindowGame:
                 # Cục trượt
                 max_offset = len(self.test_menu) - self.max_visible_tests
                 thumb_h = max(10, int(total_menu_h * self.max_visible_tests / len(self.test_menu)))
-                # Đảo ngược tỷ lệ vì menu vẽ từ dưới lên
-                scroll_ratio = (max_offset - self.test_menu_scroll_offset) / max_offset if max_offset > 0 else 0
+                # Tỷ lệ cuộn chuẩn (thuận chiều)
+                scroll_ratio = self.test_menu_scroll_offset / max_offset if max_offset > 0 else 0
                 thumb_pos = int(scroll_bar_y + scroll_ratio * (total_menu_h - thumb_h))
                 pygame.draw.rect(SCREEN, (155, 50, 100), pygame.Rect(scroll_bar_x, thumb_pos, scroll_bar_width, thumb_h), border_radius=2)
 
