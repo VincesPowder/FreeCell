@@ -2,7 +2,6 @@ import time
 import tracemalloc
 import copy
 from heapq import heappush, heappop
-from Freecell_Game import FreeCellGame
 
 class AStarSolver:
     def __init__(self, game_state, on_move_callback=None):
@@ -21,65 +20,91 @@ class AStarSolver:
         return game.CheckWinStrict()
     
     def _get_valid_moves(self, game):
-        valid_moves = []
         foundation_moves = []
         
+        # TỐI ƯU 2: Kiểm tra nước đi Foundation TRƯỚC. 
+        # Nếu có thể đưa bài lên đích, ưu tiên làm ngay và bỏ qua các tính toán Cascade vô ích.
+        for from_id in range(4, 16):
+            heap_from = game.card_heaps[from_id].heap_list
+            if not heap_from: continue
+            
+            card_idx = len(heap_from) - 1 # Chỉ lá trên cùng mới lên được Foundation
+            for to_id in range(4):
+                can_move, _ = game.CheckMoveSequence(from_id, to_id, card_idx)
+                if can_move:
+                    foundation_moves.append((from_id, to_id, card_idx, 1))
+                    
+        if foundation_moves:
+            return foundation_moves
+
+        valid_moves = []
         first_empty_fc = -1
         for i in range(4, 8):
-            if len(game.card_heaps[i].heap_list) == 0:
+            if not game.card_heaps[i].heap_list:
                 first_empty_fc = i
                 break
                 
         first_empty_cas = -1
         for i in range(8, 16):
-            if len(game.card_heaps[i].heap_list) == 0:
+            if not game.card_heaps[i].heap_list:
                 first_empty_cas = i
                 break
 
         for from_id in range(4, 16): 
             heap_from = game.card_heaps[from_id].heap_list
-            if len(heap_from) == 0:
-                continue
+            if not heap_from: continue
                 
             start_indices = range(len(heap_from)) if from_id >= 8 else [len(heap_from) - 1]
             
             for card_idx in start_indices:
                 num_cards = len(heap_from) - card_idx
-                for to_id in range(16):
+                for to_id in range(4, 16): # Đã kiểm tra 0-3 ở trên, bắt đầu từ 4
                     if from_id == to_id: continue
                     
+                    heap_to = game.card_heaps[to_id].heap_list
+                    
+                    # Cắt tỉa nhánh (Pruning)
                     if 4 <= from_id <= 7 and 4 <= to_id <= 7: continue
-                    if 8 <= from_id <= 15 and num_cards == 1 and 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0: continue
-                    if 4 <= to_id <= 7 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_fc: continue
-                    if 8 <= to_id <= 15 and len(game.card_heaps[to_id].heap_list) == 0 and to_id != first_empty_cas: continue
+                    if 8 <= from_id <= 15 and num_cards == 1 and 8 <= to_id <= 15 and not heap_to: continue
+                    if 4 <= to_id <= 7 and not heap_to and to_id != first_empty_fc: continue
+                    if 8 <= to_id <= 15 and not heap_to and to_id != first_empty_cas: continue
                     
                     can_move, _ = game.CheckMoveSequence(from_id, to_id, card_idx)
                     if can_move:
-                        move = (from_id, to_id, card_idx, num_cards)
-                        if 0 <= to_id <= 3:
-                            foundation_moves.append(move)
-                        else:
-                            valid_moves.append(move)
-                    
-        if foundation_moves:
-            return foundation_moves
+                        valid_moves.append((from_id, to_id, card_idx, num_cards))
+                        
         return valid_moves
     
     def _apply_move(self, game, move):
         from_id, to_id, card_idx, num_cards = move
-        cards_to_move = game.card_heaps[from_id].heap_list[-num_cards:]
-        game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
-        game.card_heaps[to_id].heap_list.extend(cards_to_move)
-        for i, card in enumerate(game.card_heaps[to_id].heap_list):
+        heap_from = game.card_heaps[from_id].heap_list
+        heap_to = game.card_heaps[to_id].heap_list
+        
+        # TỐI ƯU 3: Cập nhật In-place thay vì slice array
+        cards_to_move = heap_from[card_idx:]
+        del heap_from[card_idx:] 
+        
+        start_idx = len(heap_to)
+        heap_to.extend(cards_to_move)
+        
+        # Chỉ loop qua các thẻ VỪA MỚI CHUYỂN
+        for i, card in enumerate(cards_to_move, start=start_idx):
             card.group_id = to_id
             card.group_index = i
             
     def _undo_move(self, game, move):
         from_id, to_id, card_idx, num_cards = move
-        cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
-        game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
-        game.card_heaps[from_id].heap_list.extend(cards_to_undo)
-        for i, card in enumerate(game.card_heaps[from_id].heap_list):
+        heap_from = game.card_heaps[from_id].heap_list
+        heap_to = game.card_heaps[to_id].heap_list
+        
+        idx = len(heap_to) - num_cards
+        cards_to_undo = heap_to[idx:]
+        del heap_to[idx:]
+        
+        start_idx = len(heap_from)
+        heap_from.extend(cards_to_undo)
+        
+        for i, card in enumerate(cards_to_undo, start=start_idx):
             card.group_id = from_id
             card.group_index = i
 
@@ -88,12 +113,11 @@ class AStarSolver:
         cards_in_foundation = sum(len(game.card_heaps[i].heap_list) for i in range(4))
         h += (52 - cards_in_foundation) * 10
         
+        # TỐI ƯU 5: Loại bỏ vòng lặp lồng bằng toán học (Cấp số cộng)
         for i in range(8, 16):
-            heap = game.card_heaps[i].heap_list
-            for j, card in enumerate(heap):
-                depth = len(heap) - j - 1
-                if depth > 0:
-                    h += depth * 2
+            n = len(game.card_heaps[i].heap_list)
+            if n > 1:
+                h += n * (n - 1)
                     
         empty_free_cells = sum(1 for i in range(4, 8) if not game.card_heaps[i].heap_list)
         empty_cascades = sum(1 for i in range(8, 16) if not game.card_heaps[i].heap_list)
@@ -118,7 +142,10 @@ class AStarSolver:
             return self._build_result(True, [])
         
         h_initial = self._heuristic(current_game)
-        heappush(open_set, (h_initial, counter, [], 0))
+        
+        # TỐI ƯU 1 & 4: Dùng `path_node` linked-list và dùng `-counter`
+        path_node = None
+        heappush(open_set, (h_initial, -counter, path_node, 0))
         counter += 1
         self.visited_states.add(initial_hash)
         
@@ -126,10 +153,17 @@ class AStarSolver:
             if time.time() - self.start_time > timeout:
                 return self._build_result(False, [], 'Timeout exceeded')
             
-            f_score, _, path, g_score = heappop(open_set)
+            f_score, _, p_node, g_score = heappop(open_set)
             self.expanded_nodes += 1
             
-            # Khôi phục trạng thái
+            # Reconstruct path từ path_node
+            path = []
+            curr = p_node
+            while curr is not None:
+                move, curr = curr
+                path.append(move)
+            path.reverse()
+            
             common_len = 0
             for m1, m2 in zip(current_path, path):
                 if m1 == m2: common_len += 1
@@ -160,7 +194,9 @@ class AStarSolver:
                     h_score = self._heuristic(current_game)
                     f_new_score = new_g_score + (3.0 * h_score) 
                     
-                    heappush(open_set, (f_new_score, counter, path + [move], new_g_score))
+                    new_p_node = (move, p_node)
+                    # `-counter` giúp thuật toán ưu tiên nhánh mới nhất (Deep-First behavior)
+                    heappush(open_set, (f_new_score, -counter, new_p_node, new_g_score))
                     counter += 1
                 
                 self._undo_move(current_game, move)
@@ -173,7 +209,6 @@ class AStarSolver:
         tracemalloc.stop()
         self.end_memory = peak / (1024 ** 2)
         
-        # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
         formatted_solution = [(m[0], m[1], m[2]) for m in solution]
 
         res = {
