@@ -5,6 +5,8 @@ import time
 from Freecell_Game import FreeCellGame
 from BFS_Solver import BFSSolver
 from A_Star_Solver import AStarSolver
+from IDS_Solver import IDSSolver
+from UCS_Solver import UCSSolver
 from test_cases import TestCases
 import threading
 import random
@@ -66,7 +68,7 @@ class WindowGame:
         self.solver_menu_open = False
         self.solver_menu = {
             "BFS": pygame.Rect(900, PANEL_Y - 120, 90, 30),
-            "DFS": pygame.Rect(900, PANEL_Y - 90, 90, 30),
+            "IDS": pygame.Rect(900, PANEL_Y - 90, 90, 30),
             "UCS": pygame.Rect(900, PANEL_Y - 60, 90, 30),
             "A*": pygame.Rect(900, PANEL_Y - 30, 90, 30),
         }
@@ -142,8 +144,53 @@ class WindowGame:
         try:
             if solver_algo == "BFS":
                 solver = BFSSolver(self.freecell_game)
-                self.solver_result = solver.solve(max_nodes=1000000, timeout=180)
+                # Note: BFS is slow for FreeCell due to large state space
+                # Even solvable games may take 5-10 minutes
+                # For faster solving, use A* instead
+                self.solver_result = solver.solve(max_nodes=1000000, timeout=600)
                 self.solver_selected = "BFS"
+                
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[BFS] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                    # Store solution and auto-start animation
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing animation...")
+                else:
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"BFS: {error_msg}")
+
+            elif solver_algo == "IDS":
+                solver = IDSSolver(self.freecell_game)
+                # Lưu ý: IDS có thể cần limit độ sâu (max_depth) để không chạy quá lâu
+                self.solver_result = solver.solve(max_depth=1000, timeout=300)
+                self.solver_selected = "IDS"
+                
+                if self.solver_result['solved'] and self.solver_result['solution']:
+                    self.log.append(f"[IDS] Solved in {self.solver_result['search_length']} moves!")
+                    self.log.append(f"Time: {self.solver_result['search_time']:.2f}s, Nodes: {self.solver_result['expanded_nodes']}")
+                    self.log.append(f"Memory: {self.solver_result['memory_used']:.2f}MB")
+                    
+                    # Tự động chạy animation sau khi giải xong
+                    self.animation_moves = self.solver_result['solution']
+                    self.animation_running = True
+                    self.animation_current_move = 0
+                    self.animation_start_time = time.time()
+                    self.log.append(f"🎬 Playing IDS solution...")
+                else:
+                    error_msg = self.solver_result.get('error', 'No solution found')
+                    self.log.append(f"IDS: {error_msg}")
+
+            elif solver_algo == "UCS":
+                solver = UCSSolver(self.freecell_game)
+                # UCS tìm đường đi ngắn nhất nên timeout cần để cao một chút
+                self.solver_result = solver.solve(max_nodes=500000, timeout=300)
+                self.solver_selected = "UCS"
+
             elif solver_algo == "A*":
                 solver = AStarSolver(self.freecell_game)
                 self.solver_result = solver.solve(max_nodes=100000, timeout=60)
@@ -322,7 +369,7 @@ class WindowGame:
                                 self.solver_menu_open = not self.solver_menu_open
                                 self.seed_input_open = False
                                 self.test_menu_open = False
-                            elif p_id in ["BFS", "DFS", "UCS", "A*"]:
+                            elif p_id in ["BFS", "IDS", "UCS", "A*"]:
                                 if not self.solver_running:
                                     self.solver_running = True
                                     self.solver_menu_open = False

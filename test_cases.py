@@ -89,59 +89,18 @@ class TestCases:
         for s in range(4):
             for r in range(9): # A -> 9
                 game.card_heaps[s].PushTop(cards[s * 13 + r])
-
-        # Col 8: 10 Club (dưới), J Heart, Q Club, K Heart (trên)
-        game.card_heaps[8].PushTop(cards[39 + 9]); game.card_heaps[8].PushTop(cards[0 + 10])
-        game.card_heaps[8].PushTop(cards[39 + 11]); game.card_heaps[8].PushTop(cards[0 + 12])
-        # Col 9: 10 Diamond, J Spade, Q Diamond, K Spade
-        game.card_heaps[9].PushTop(cards[13 + 9]); game.card_heaps[9].PushTop(cards[26 + 10])
-        game.card_heaps[9].PushTop(cards[13 + 11]); game.card_heaps[9].PushTop(cards[26 + 12])
-        # Col 10: 10 Spade, J Diamond, Q Spade, K Diamond
-        game.card_heaps[10].PushTop(cards[26 + 9]); game.card_heaps[10].PushTop(cards[13 + 10])
-        game.card_heaps[10].PushTop(cards[26 + 11]); game.card_heaps[10].PushTop(cards[13 + 12])
-        # Col 11: 10 Heart, J Club, Q Heart, K Club
-        game.card_heaps[11].PushTop(cards[0 + 9]); game.card_heaps[11].PushTop(cards[39 + 10])
-        game.card_heaps[11].PushTop(cards[0 + 11]); game.card_heaps[11].PushTop(cards[39 + 12])
-
-    # ==========================================
-    # PHASE 2: GENERATED PARTIAL GAMES
-    # ==========================================
-
-    @staticmethod
-    def setup_test_5(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=8, seed=5) # 20 lá còn lại (9-K)
-
-    @staticmethod
-    def setup_test_6(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=7, seed=6) # 24 lá còn lại (8-K)
-
-    @staticmethod
-    def setup_test_7(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=6, seed=7) # 28 lá còn lại (7-K)
-
-    @staticmethod
-    def setup_test_8(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=5, seed=8) # 32 lá còn lại (6-K)
-
-    @staticmethod
-    def setup_test_9(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=4, seed=9) # 36 lá còn lại (5-K)
-
-    @staticmethod
-    def setup_test_10(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=3, seed=10) # 40 lá còn lại (4-K)
-
-    @staticmethod
-    def setup_test_11(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=2, seed=11) # 44 lá còn lại (3-K)
-
-    @staticmethod
-    def setup_test_12(game: FreeCellGame):
-        TestCases._setup_partial_game(game, max_foundation_rank=1, seed=12) # 48 lá còn lại (2-K)
-
-    # ==========================================
-    # PHASE 3: FULL GAMES (52 lá bài)
-    # ==========================================
+        # Cột 8: 10 Rô (r), 9 Bích (b) đè lên 9 Rô (r)
+        game.card_heaps[8].PushTop(cards[22]) # 10 Diamond
+        game.card_heaps[8].PushTop(cards[34]) # 9 Spade
+        game.card_heaps[8].PushTop(cards[21]) # 9 Diamond (Đang bị kẹt)
+        # Thêm 9 Cơ và 9 Nhép vào 2 cột riêng (đủ 4 lá 9)
+        game.card_heaps[12].PushTop(cards[8])  # 9 Heart
+        game.card_heaps[13].PushTop(cards[47]) # 9 Club
+        # Các lá còn lại (10, J, Q, K) rải rác
+        for i in range(4):
+            for r in [12, 11, 10, 9]:
+                if cards[i * 13 + r].group_id == -1: # Nếu chưa xếp
+                    game.card_heaps[9 + i].PushTop(cards[i * 13 + r])
 
     @staticmethod
     def setup_test_13(game: FreeCellGame):
