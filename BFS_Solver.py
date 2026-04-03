@@ -75,7 +75,7 @@ class BFSSolver:
             card.group_id = to_id
             card.group_index = i
 
-    def solve(self, max_nodes=100000, timeout=180):
+    def solve(self, max_nodes=100000, timeout=300, stop_event=None):
         self.start_time = time.time()
         tracemalloc.start()
         
@@ -90,6 +90,8 @@ class BFSSolver:
         self.visited_states.add(initial_hash)
         
         while queue and self.expanded_nodes < max_nodes:
+            if stop_event and stop_event.is_set():
+                return self._finalize(False, [], 'Solver stopped!')
             if time.time() - self.start_time > timeout:
                 return self._finalize(False, [], 'Timeout exceeded')
             

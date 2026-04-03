@@ -10,6 +10,7 @@ class IDSSolver:
         self.expanded_nodes = 0
         self.start_time = None
         self.start_memory = None
+        self.stop_event = None
 
     def _get_game_state_hash(self, game):
         # Dùng bytes thay vì tuple → hash nhanh hơn đáng kể
@@ -46,6 +47,8 @@ class IDSSolver:
         return foundation_moves if foundation_moves else valid_moves
 
     def _dfs_limited(self, game, path, visited, depth_limit, timeout):
+        if self.stop_event and self.stop_event.is_set():
+            return "STOPPED"
         self.expanded_nodes += 1
 
         # Check Win
@@ -89,11 +92,13 @@ class IDSSolver:
 
         return None
 
-    def solve(self, max_depth=100, timeout=300):
+    def solve(self, max_depth=100, timeout=300, stop_event=None):
+        self.stop_event = stop_event # Lưu lại để hàm DFS gọi
         self.start_time = time.time()
         tracemalloc.start()
         process = psutil.Process(os.getpid())
         self.start_memory = process.memory_info().rss / (1024 ** 2)
+        self.expanded_nodes = 0
 
         initial_hash = self._get_game_state_hash(self.initial_game_source)
 
@@ -110,6 +115,8 @@ class IDSSolver:
 
             result = self._dfs_limited(current_game, solution_path, visited, depth, timeout)
 
+            if result == "STOPPED":
+                return self._build_result(False, [], process, "Solver stopped!")
             if result == "TIMEOUT":
                 break
 

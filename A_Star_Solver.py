@@ -40,7 +40,7 @@ class AStarSolver:
                     score += (len(column) - 1 - idx) * 30
         return score
 
-    def solve(self, max_nodes=100000, timeout=60):
+    def solve(self, max_nodes=100000, timeout=60, stop_event=None):
         process = psutil.Process(os.getpid())
         start_mem = process.memory_info().rss
         start_time = time.time()
@@ -53,6 +53,8 @@ class AStarSolver:
         expanded_nodes = 0
 
         while queue:
+            if stop_event and stop_event.is_set():
+                return self._finalize(False, [], 'Solver stopped!')
             if time.time() - start_time > timeout:
                 return {"solved": False, "error": "Timeout", "search_time": timeout}
 
