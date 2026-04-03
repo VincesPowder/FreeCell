@@ -153,6 +153,7 @@ class WindowGame:
     
     def run_solver_thread(self, solver_algo):
         try:
+            self.stop_event.clear()
             if solver_algo == "BFS":
                 solver = BFSSolver(self.freecell_game)
                 self.solver_result = solver.solve(max_nodes=1000000, timeout=600, stop_event=self.stop_event)
