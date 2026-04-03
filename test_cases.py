@@ -1,189 +1,175 @@
 """
-Bộ Test Case đo lường hiệu suất Search Algorithms.
-Độ khó tăng dần từ việc chỉ còn 4 lá bài (Test 1) cho tới toàn bộ 52 lá nguyên bản (Test 13-16).
-Đảm bảo đánh giá rõ được Search Time, Memory Usage, và Expanded Nodes.
+Bộ Test Case đo lường hiệu suất BFS/IDS/UCS - Đầy đủ 52 lá bài.
+Mức độ khó được tinh chỉnh để thấy rõ sự khác biệt về thuật toán.
 """
-import random
 from Freecell_Game import FreeCellGame
 
 class TestCases:
     @staticmethod
     def _clear_and_prepare(game: FreeCellGame):
-        """Xóa trắng bàn chơi và lấy lại 52 lá bài."""
         for heap in game.card_heaps:
             heap.heap_list = []
         return game.CARDS # Trả về 52 lá: 0-12 Heart, 13-25 Diamond, 26-38 Spade, 39-51 Club
 
     @staticmethod
-    def _setup_partial_game(game: FreeCellGame, max_foundation_rank: int, seed: int):
-        """Hàm hỗ trợ sinh test case ngẫu nhiên nhưng cố định (dựa vào seed) cho độ khó tăng dần."""
+    def setup_test_1_trivial(game: FreeCellGame):
+        """Mức 1: 12 bước - Tuyến tính (Dễ nhất).
+        Foundation: Đã có từ A -> 10 (40 lá).
+        Cascade: 4 cột, mỗi cột chứa K, Q, J xếp đúng thứ tự.
+        Thuật toán chỉ cần bốc J, sau đó Q, cuối cùng là K của 4 chất."""
         cards = TestCases._clear_and_prepare(game)
-        
-        # 1. Đưa các lá bài đến max_foundation_rank vào Foundation an toàn
         for s in range(4):
-            for r in range(max_foundation_rank):
+            for r in range(10): # A -> 10 vào Foundation
                 game.card_heaps[s].PushTop(cards[s * 13 + r])
+        
+        # Xếp J, Q, K vào 4 cột (Cột 8-11)
+        for i in range(4):
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 12]) # King nằm dưới
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 11]) # Queen nằm giữa
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 10]) # Jack nằm trên cùng
+    @staticmethod
+    def setup_test_2_very_easy(game: FreeCellGame):
+        """Mức 2: ~18 bước - Dễ nhưng có chút thử thách.
+        36 lá ở Foundation (A -> 9). Còn lại 10, J, Q, K.
+        - Phân bố 16 quân bài còn lại trên 6 cột đầu (8-13).
+        - Giữ nguyên logic kẹt bài (10 nằm TRÊN Jack) cho 2 chất."""
+        cards = TestCases._clear_and_prepare(game)
+        for s in range(4):
+            for r in range(9): # A -> 9 vào Foundation (Cards 0-8, 13-21, 26-34, 39-47)
+                game.card_heaps[s].PushTop(cards[s * 13 + r])
+        
+        # Danh sách quân bài cascade mục tiêu dựa trên bố cục (với kẹt bài được điều chỉnh)
+        cascade_cards = [
+            # Heart K, Q, J, 10
+            cards[12], cards[11], cards[10], cards[9],
+            # Diamond K, Q, J, 10
+            cards[25], cards[24], cards[23], cards[22],
+            # Spade K, Q, J, 10 (thứ tự J trước 10 để xếp 10 trên J)
+            cards[38], cards[37], cards[36], cards[35],  # 10 Sp trên J Sp
+            # Club K, Q, J, 10 (thứ tự J trước 10 để xếp 10 trên J)
+            cards[51], cards[50], cards[49], cards[48]   # 10 Cl trên J Cl
+        ]
+        
+        # Phân bố trên 6 cột đầu (game.card_heaps[8] đến game.card_heaps[13])
+        # Phân bố mục tiêu: 3, 3, 3, 3, 2, 2 quân bài
+        
+        col_counts = [3, 3, 3, 3, 2, 2]
+        current_card_index = 0
+        for i, count in enumerate(col_counts):
+            for _ in range(count):
+                game.card_heaps[8 + i].PushTop(cascade_cards[current_card_index])
+                current_card_index += 1
 
-        # 2. Thu thập các lá bài còn lại
+    @staticmethod
+    def setup_test_3_easy(game: FreeCellGame):
+        """Mức 3: Dễ (Logic 1 nút thắt).
+        Foundation: Đã ăn đến 9 (36 lá).
+        Cascade: Chỉ kẹt duy nhất 1 quân King trên quân 10 ở cột 8.
+        Các cột khác xếp hoàn hảo để tạo hiệu ứng domino khi gỡ được King."""
+        cards = TestCases._clear_and_prepare(game)
+        for s in range(4):
+            for r in range(9): game.card_heaps[s].PushTop(cards[s * 13 + r])
+        
+        # Cột 8: 10 Heart bị King Heart chặn
+        game.card_heaps[8].PushTop(cards[9])   # 10 H
+        game.card_heaps[8].PushTop(cards[12])  # King H
+
+        # Các cột còn lại xếp thuận thứ tự
+        for r in [25, 24, 23, 22]: game.card_heaps[9].PushTop(cards[r])  # Diamond
+        for r in [38, 37, 36, 35]: game.card_heaps[10].PushTop(cards[r]) # Spade
+        for r in [51, 50, 49, 48]: game.card_heaps[11].PushTop(cards[r]) # Club
+        game.card_heaps[12].PushTop(cards[11]) # Queen H
+        game.card_heaps[12].PushTop(cards[10]) # Jack H
+
+    @staticmethod
+    def setup_test_4_medium(game: FreeCellGame):
+        """Mức 4: Trung bình (Logic đa điểm kẹt).
+        Foundation: Đã ăn đến 10 (40 lá).
+        Cascade: 4 cột đều bị kẹt (King đè lên Queen/Jack).
+        Thuật toán phải xử lý việc dọn dẹp nhiều cột cùng lúc."""
+        cards = TestCases._clear_and_prepare(game)
+        for s in range(4):
+            for r in range(10): 
+                game.card_heaps[s].PushTop(cards[s * 13 + r])
+        for i in range(4):
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 11]) # Q nằm dưới
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 10]) # J nằm dưới
+            game.card_heaps[8 + i].PushTop(cards[i * 13 + 12]) # King chặn trên cùng
+
+    @staticmethod
+    def setup_test_5_hard(game: FreeCellGame):
+        """Mức 5: ~25-35 bước - Thử thách bộ nhớ."""
+        cards = TestCases._clear_and_prepare(game)
+        for s in range(4):
+            for r in range(6): game.card_heaps[s].PushTop(cards[s * 13 + r])
+        all_remain = [cards[i] for i in range(52) if cards[i].group_id == -1]
+        for i, card in enumerate(all_remain):
+            game.card_heaps[8 + (i % 8)].PushTop(card)
+
+    @staticmethod
+    def setup_test_6_stress_8col(game: FreeCellGame):
+        """Mức 6: 44 bước - Tuyến tính (Rải trên 8 cột).
+        Foundation: A, 2. Cascade: 8 cột xếp từ K -> 3 chồng lên nhau.
+        Branching factor lớn do có nhiều cột để chọn."""
+        cards = TestCases._clear_and_prepare(game)
+        for s in range(4):
+            game.card_heaps[s].PushTop(cards[s * 13 + 0]) # Ace
+            game.card_heaps[s].PushTop(cards[s * 13 + 1]) # 2
+        
         remaining_cards = []
         for s in range(4):
-            for r in range(max_foundation_rank, 13):
+            for r in range(12, 1, -1): # K -> 3
                 remaining_cards.append(cards[s * 13 + r])
-
-        # 3. Trộn ngẫu nhiên với seed cố định để đảm bảo test case không đổi mỗi lần chạy
-        rng = random.Random(seed)
-        rng.shuffle(remaining_cards)
-
-        # 4. Rải đều vào 8 cột Cascade
+        
         for i, card in enumerate(remaining_cards):
             game.card_heaps[8 + (i % 8)].PushTop(card)
 
-    # ==========================================
-    # PHASE 1: MANUAL SETUP (Rèn luyện thuật toán)
-    # ==========================================
-
     @staticmethod
-    def setup_test_1(game: FreeCellGame):
-        """Mức 1: Trivial (4 lá) - 4 lá King nằm trên đỉnh 4 cột."""
+    def setup_test_7_stress_4col(game: FreeCellGame):
+        """Mức 7: 44 bước - Tuyến tính (Chỉ 4 cột).
+        Foundation: A, 2. Cascade: 4 cột xếp đè từ K -> 3.
+        Mỗi cột cao 11 lá. Ít lựa chọn cột hơn nhưng chiều sâu mỗi cột lớn."""
         cards = TestCases._clear_and_prepare(game)
         for s in range(4):
-            for r in range(12): # A -> Q vào Foundation
-                game.card_heaps[s].PushTop(cards[s * 13 + r])
+            game.card_heaps[s].PushTop(cards[s * 13 + 0]) # Ace
+            game.card_heaps[s].PushTop(cards[s * 13 + 1]) # 2
+        
         for s in range(4):
-            game.card_heaps[8 + s].PushTop(cards[s * 13 + 12]) # K vào 4 cột
-
+            for r in range(12, 1, -1): # King (dưới) -> 3 (trên)
+                game.card_heaps[8 + s].PushTop(cards[s * 13 + r])
+    
     @staticmethod
-    def setup_test_2(game: FreeCellGame):
-        """Mức 2: Very Easy (8 lá) - Q và K kẹt chéo nhau, cần 1 nhịp dùng FreeCell."""
-        cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            for r in range(11): # A -> J
-                game.card_heaps[s].PushTop(cards[s * 13 + r])
-        # Cột 8: K Heart đè bởi Q Spade
-        game.card_heaps[8].PushTop(cards[12]); game.card_heaps[8].PushTop(cards[37])
-        # Cột 9: K Spade đè bởi Q Heart
-        game.card_heaps[9].PushTop(cards[38]); game.card_heaps[9].PushTop(cards[11])
-        # Cột 10: K Diamond đè bởi Q Club
-        game.card_heaps[10].PushTop(cards[25]); game.card_heaps[10].PushTop(cards[50])
-        # Cột 11: K Club đè bởi Q Diamond
-        game.card_heaps[11].PushTop(cards[51]); game.card_heaps[11].PushTop(cards[24])
-
-    @staticmethod
-    def setup_test_3(game: FreeCellGame):
-        """Mức 3: Easy (12 lá) - J, Q, K ngược thứ tự."""
-        cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            for r in range(10): # A -> 10
-                game.card_heaps[s].PushTop(cards[s * 13 + r])
-        suits = [0, 13, 26, 39]
-        for i in range(4):
-            game.card_heaps[8 + i].PushTop(cards[suits[i] + 10]) # J
-            game.card_heaps[8 + i].PushTop(cards[suits[i] + 11]) # Q
-            game.card_heaps[8 + i].PushTop(cards[suits[i] + 12]) # K
-
-    @staticmethod
-    def setup_test_4(game: FreeCellGame):
-        """Mức 4: Medium (16 lá) - Sửa lỗi kẹt bài logic. Yêu cầu gỡ rối sâu.
-        Lá 10 nằm dưới cùng, bị chặn bởi J, Q, K chặn bên trên."""
-        cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            for r in range(9): # A -> 9
-                game.card_heaps[s].PushTop(cards[s * 13 + r])
-        # Cột 8: 10 Rô (r), 9 Bích (b) đè lên 9 Rô (r)
-        game.card_heaps[8].PushTop(cards[22]) # 10 Diamond
-        game.card_heaps[8].PushTop(cards[34]) # 9 Spade
-        game.card_heaps[8].PushTop(cards[21]) # 9 Diamond (Đang bị kẹt)
-        # Thêm 9 Cơ và 9 Nhép vào 2 cột riêng (đủ 4 lá 9)
-        game.card_heaps[12].PushTop(cards[8])  # 9 Heart
-        game.card_heaps[13].PushTop(cards[47]) # 9 Club
-        # Các lá còn lại (10, J, Q, K) rải rác
-        for i in range(4):
-            for r in [12, 11, 10, 9]:
-                if cards[i * 13 + r].group_id == -1: # Nếu chưa xếp
-                    game.card_heaps[9 + i].PushTop(cards[i * 13 + r])
-                    
-    @staticmethod
-    def setup_test_5(game: FreeCellGame):
-        """Mức 5: Harder Partial (20 lá) - Đã xếp xong từ A -> 8, trộn ngẫu nhiên 20 lá còn lại (9 -> K)."""
-        # max_foundation_rank = 8 tương đương với việc cất 8 lá (A đến 8) của mỗi chất
-        TestCases._setup_partial_game(game, max_foundation_rank=8, seed=505)
-
-    @staticmethod
-    def setup_test_6(game: FreeCellGame):
-        """Mức 6: Harder Partial (24 lá) - Đã xếp xong từ A -> 7, trộn ngẫu nhiên 24 lá còn lại (8 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=7, seed=606)
-
-    @staticmethod
-    def setup_test_7(game: FreeCellGame):
-        """Mức 7: Advanced Partial (28 lá) - Đã xếp xong từ A -> 6, trộn ngẫu nhiên 28 lá còn lại (7 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=6, seed=707)
-
-    @staticmethod
-    def setup_test_8(game: FreeCellGame):
-        """Mức 8: Advanced Partial (32 lá) - Đã xếp xong từ A -> 5, trộn ngẫu nhiên 32 lá còn lại (6 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=5, seed=808)
-
-    @staticmethod
-    def setup_test_9(game: FreeCellGame):
-        """Mức 9: Expert Partial (36 lá) - Đã xếp xong từ A -> 4, trộn ngẫu nhiên 36 lá còn lại (5 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=4, seed=909)
-
-    @staticmethod
-    def setup_test_10(game: FreeCellGame):
-        """Mức 10: Expert Partial (40 lá) - Đã xếp xong từ A -> 3, trộn ngẫu nhiên 40 lá còn lại (4 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=3, seed=1010)
-
-    @staticmethod
-    def setup_test_11(game: FreeCellGame):
-        """Mức 11: Master Partial (44 lá) - Đã xếp xong từ A -> 2, trộn ngẫu nhiên 44 lá còn lại (3 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=2, seed=1111)
-
-    @staticmethod
-    def setup_test_12(game: FreeCellGame):
-        """Mức 12: Master Partial (48 lá) - Đã xếp xong các lá A, trộn ngẫu nhiên 48 lá còn lại (2 -> K)."""
-        TestCases._setup_partial_game(game, max_foundation_rank=1, seed=1212)
-
-    @staticmethod
-    def setup_test_13(game: FreeCellGame):
-        """Mức 13: Full Game - Easy (Seed 25904)"""
+    def setup_test_8_seed_25904(game: FreeCellGame):
+        """Mức 8: Ván chơi thực tế - Seed #25904.
+        Toàn bộ 52 lá được chia ngẫu nhiên theo thuật toán của game gốc.
+        Dùng để kiểm tra khả năng giải ván thực của 4 thuật toán."""
         game.NewGameWithNumber(25904)
 
     @staticmethod
-    def setup_test_14(game: FreeCellGame):
-        """Mức 14: Full Game - Medium (Seed 1)"""
-        game.NewGameWithNumber(1)
+    def setup_test_9_seed_27121(game: FreeCellGame):
+        """Mức 9: Ván chơi thực tế - Seed #27121."""
+        game.NewGameWithNumber(27121)
 
     @staticmethod
-    def setup_test_15(game: FreeCellGame):
-        """Mức 15: Full Game - Hard (Seed 617)"""
-        game.NewGameWithNumber(617)
-
-    @staticmethod
-    def setup_test_16(game: FreeCellGame):
-        """Mức 16: Full Game - Expert (Seed 11982)"""
-        game.NewGameWithNumber(11982)
+    def setup_test_10_seed_24176(game: FreeCellGame):
+        """Mức 10: Ván chơi thực tế - Seed #24176."""
+        game.NewGameWithNumber(24176)
 
     @staticmethod
     def load_test(test_num: int):
         game = FreeCellGame()
         tests = {
-            1: TestCases.setup_test_1,
-            2: TestCases.setup_test_2,
-            3: TestCases.setup_test_3,
-            4: TestCases.setup_test_4,
-            5: TestCases.setup_test_5,
-            6: TestCases.setup_test_6,
-            7: TestCases.setup_test_7,
-            8: TestCases.setup_test_8,
-            9: TestCases.setup_test_9,
-            10: TestCases.setup_test_10,
-            11: TestCases.setup_test_11,
-            12: TestCases.setup_test_12,
-            13: TestCases.setup_test_13,
-            14: TestCases.setup_test_14,
-            15: TestCases.setup_test_15,
-            16: TestCases.setup_test_16,
+            1: TestCases.setup_test_1_trivial,
+            2: TestCases.setup_test_2_very_easy,
+            3: TestCases.setup_test_3_easy,
+            4: TestCases.setup_test_4_medium,
+            5: TestCases.setup_test_5_hard,
+            6: TestCases.setup_test_6_stress_8col,
+            7: TestCases.setup_test_7_stress_4col,
+            8: TestCases.setup_test_8_seed_25904,
+            9: TestCases.setup_test_9_seed_27121,
+            10: TestCases.setup_test_10_seed_24176,
         }
-        setup_f = tests.get(test_num, TestCases.setup_test_1)
+        setup_f = tests.get(test_num, TestCases.setup_test_1_trivial)
         setup_f(game)
         return game

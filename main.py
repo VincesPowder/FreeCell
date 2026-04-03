@@ -86,7 +86,7 @@ class WindowGame:
         
         self.test_menu_open = False
         self.test_menu = {}
-        for i in range(1, 17):
+        for i in range(1, 11):
             self.test_menu[f"Test {i}"] = i
         self.test_menu_scroll_offset = 0
         self.max_visible_tests = 4
