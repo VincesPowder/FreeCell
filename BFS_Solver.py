@@ -17,15 +17,30 @@ class BFSSolver:
         self.search_length = 0
         self.on_move_callback = on_move_callback
         
-    def _get_game_state_hash(self, game_or_res):
-        if hasattr(game_or_res, "CARDS"):
-            return tuple((c.group_id, c.group_index) for c in game_or_res.CARDS)
-
-        res = game_or_res
-        parts = []
-        for i in range(0, len(res), 2):
-            parts.append("%02d%02d" % (int(res[i]), int(res[i + 1])))
-        return "".join(parts)
+    def _get_game_state_hash(self, game):
+        """Tạo mã hash tối ưu, loại bỏ tính đối xứng của FreeCell và Cascade"""
+        # 1. Foundations (0-3): Đã cố định chất bài, chỉ cần lưu giá trị (num) lớn nhất
+        foundations = tuple(
+            game.card_heaps[i].heap_list[-1].num if game.card_heaps[i].heap_list else 0 
+            for i in range(4)
+        )
+        
+        # 2. Freecells (4-7): Sort để đồng nhất các ô Freecell (bỏ vào ô nào cũng giống nhau)
+        freecells = []
+        for i in range(4, 8):
+            if game.card_heaps[i].heap_list:
+                c = game.card_heaps[i].heap_list[0]
+                freecells.append((c.color, c.num))
+        freecells.sort()
+        
+        # 3. Cascades (8-15): Sort các cột để đồng nhất việc dùng các cột rỗng
+        cascades = []
+        for i in range(8, 16):
+            col = tuple((c.color, c.num) for c in game.card_heaps[i].heap_list)
+            cascades.append(col)
+        cascades.sort()
+        
+        return (foundations, tuple(freecells), tuple(cascades))
     
     def _check_win(self, game):
         return game.CheckWinStrict()
@@ -74,39 +89,65 @@ class BFSSolver:
         for i, card in enumerate(game.card_heaps[to_id].heap_list):
             card.group_id = to_id
             card.group_index = i
+    
+    def _undo_move(self, game, move):
+        """Hoàn tác nước đi để đưa bàn cờ về trạng thái trước đó."""
+        from_id, to_id, card_idx, num_cards = move
+        cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
+        game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
+        game.card_heaps[from_id].heap_list.extend(cards_to_undo)
+        
+        # Cập nhật lại group_id và group_index
+        for i, card in enumerate(game.card_heaps[from_id].heap_list):
+            card.group_id = from_id
+            card.group_index = i
 
-    def solve(self, max_nodes=100000, timeout=180):
+    def solve(self, max_nodes=100000, timeout=300, stop_event=None):
         self.start_time = time.time()
         tracemalloc.start()
         
         queue = deque()
         current_game = copy.deepcopy(self.initial_game)
+        current_path = []
         
         if self._check_win(current_game):
             return self._finalize(True, [])
 
         initial_hash = self._get_game_state_hash(current_game)
-        queue.append((current_game, []))
+        queue.append([]) 
         self.visited_states.add(initial_hash)
         
         while queue and self.expanded_nodes < max_nodes:
+            if stop_event and stop_event.is_set():
+                return self._finalize(False, [], 'Solver stopped!')
             if time.time() - self.start_time > timeout:
                 return self._finalize(False, [], 'Timeout exceeded')
             
-            current_game, path = queue.popleft()
+            path = queue.popleft()
             self.expanded_nodes += 1
 
-            for move in self._get_valid_moves(current_game):
-                next_game = copy.deepcopy(current_game)
-                self._apply_move(next_game, move)
+            common_len = 0
+            for m1, m2 in zip(current_path, path):
+                if m1 == m2: common_len += 1
+                else: break
+                
+            for move in reversed(current_path[common_len:]): 
+                self._undo_move(current_game, move)
+            for move in path[common_len:]: 
+                self._apply_move(current_game, move)
+                
+            current_path = path
 
-                if self._check_win(next_game):
+            for move in self._get_valid_moves(current_game):
+                self._apply_move(current_game, move)
+                if self._check_win(current_game): 
                     return self._finalize(True, path + [move])
 
-                next_hash = self._get_game_state_hash(next_game)
+                next_hash = self._get_game_state_hash(current_game)
                 if next_hash not in self.visited_states:
                     self.visited_states.add(next_hash)
-                    queue.append((next_game, path + [move]))
+                    queue.append(path + [move]) 
+                self._undo_move(current_game, move)
         
         return self._finalize(False, [], 'No solution found within node limit')
 

@@ -72,7 +72,7 @@ class UCSSolver:
         for i, card in enumerate(game.card_heaps[from_id].heap_list):
             card.group_id, card.group_index = from_id, i
 
-    def solve(self, max_nodes=500000, timeout=450):
+    def solve(self, max_nodes=500000, timeout=300, stop_event=None):
         """
         Thực hiện giải thuật Uniform-Cost Search.
         """
@@ -95,6 +95,8 @@ class UCSSolver:
         self.visited_states.add(initial_hash)
         
         while open_set and self.expanded_nodes < max_nodes:
+            if stop_event and stop_event.is_set():
+                return self._finalize(False, [], 'Solver stopped!')
             if time.time() - self.start_time > timeout:
                 self._finalize_metrics(process)
                 return self._build_result(False, [], "Timeout exceeded")
