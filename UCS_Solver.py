@@ -96,7 +96,7 @@ class UCSSolver:
         
         while open_set and self.expanded_nodes < max_nodes:
             if stop_event and stop_event.is_set():
-                return self._finalize(False, [], 'Solver stopped!')
+                return self._build_result(False, [], 'Solver stopped!')
             if time.time() - self.start_time > timeout:
                 self._finalize_metrics(process)
                 return self._build_result(False, [], "Timeout exceeded")
