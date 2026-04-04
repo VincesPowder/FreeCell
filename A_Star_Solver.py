@@ -1,176 +1,142 @@
+import heapq
 import time
 import psutil
 import os
-import copy
-from heapq import heappush, heappop
+from Freecell_Game import OPERATIONS
 
 class AStarSolver:
     def __init__(self, game_state):
-        self.initial_game_source = game_state
-        self.visited_states = {} # Dùng dict lưu {hash: g_score} để cho phép cập nhật đường đi ngắn hơn
-        self.expanded_nodes = 0
-        self.start_time = None
-        self.end_time = None
-        self.start_memory = None
-        self.end_memory = None
+        self.game = game_state
+        self.start_heaps = []
+        for h in game_state.card_heaps:
+            col = []
+            for c in h.heap_list:
+                v = getattr(c, 'num', 0)
+                if v == 0 and hasattr(c, 'point'):
+                    pts = {'A':1,'J':11,'Q':12,'K':13}
+                    v = pts.get(str(c.point), int(c.point) if str(c.point).isdigit() else 0)
+                # Lưu thông tin tối giản: giá trị, màu, và thuộc tính rb (đỏ/đen)
+                rb = 'black' if c.color.lower() in ['spade', 'club'] else 'red'
+                col.append({'num': v, 'color': c.color, 'rb': rb, 'point': str(c.point)})
+            self.start_heaps.append(col)
 
-    def _get_game_state_hash(self, game):
-        """Hash tối ưu bỏ qua tính đối xứng của FreeCell và Cascade"""
-        foundations = tuple(game.card_heaps[i].heap_list[-1].num if game.card_heaps[i].heap_list else 0 for i in range(4))
-        
-        freecells = []
-        for i in range(4, 8):
-            if game.card_heaps[i].heap_list:
-                c = game.card_heaps[i].heap_list[0]
-                freecells.append((c.color, c.num))
-        freecells.sort()
-        
-        cascades = []
-        for i in range(8, 16):
-            col = tuple((c.color, c.num) for c in game.card_heaps[i].heap_list)
-            cascades.append(col)
-        cascades.sort()
-        
-        return (foundations, tuple(freecells), tuple(cascades))
+    def _get_state_tuple(self, heaps):
+        """Hàm băm tối ưu: Loại bỏ tính đối xứng để tăng tốc độ giải."""
+        fnd = tuple(tuple((c['color'], c['num']) for c in h) for h in heaps[:4])
+        f_cells = sorted([(c['color'], c['num']) for h in heaps[4:8] if h for c in h])
+        tbl = sorted([tuple((c['color'], c['num']) for c in h) for h in heaps[8:16]])
+        return (fnd, tuple(f_cells), tuple(tbl))
 
-    def _heuristic(self, game):
+    def _check_move_internal(self, card, to_id, target_heap):
+        """Tự kiểm tra luật di chuyển bên trong Solver - Tuyệt đối không gọi self.game."""
+        # 1. Foundation (0-3)
+        if 0 <= to_id <= 3:
+            if not target_heap:
+                return card['num'] == 1
+            last = target_heap[-1]
+            return card['color'] == last['color'] and card['num'] == last['num'] + 1
+        
+        # 2. FreeCell (4-7)
+        if 4 <= to_id <= 7:
+            return len(target_heap) == 0
+        
+        # 3. Tableau (8-15)
+        if 8 <= to_id <= 15:
+            if not target_heap:
+                return True
+            last = target_heap[-1]
+            return card['rb'] != last['rb'] and card['num'] == last['num'] - 1
+        return False
+
+    def _heuristic(self, heaps):
         score = 0
-        # 1. Thưởng điểm khi đưa bài lên Foundation (0-3)
-        cards_in_foundation = sum(len(game.card_heaps[i].heap_list) for i in range(4))
-        score -= cards_in_foundation * 150
-
-        # 2. Phạt nếu chiếm dụng FreeCell (4-7)
+        # Ưu tiên bài lên Foundation
+        score -= sum(len(heaps[i]) for i in range(4)) * 150
+        # Phạt khi dùng FreeCell
         for i in range(4, 8):
-            if len(game.card_heaps[i].heap_list) > 0:
-                score += 30
-
-        # 3. Phạt nếu các lá bài nhỏ (A, 2, 3...) bị kẹt sâu trong Cascade
+            if heaps[i]: score += 30
+        # Phạt bài nhỏ bị kẹt sâu
         for i in range(8, 16):
-            column = game.card_heaps[i].heap_list
-            for idx, card in enumerate(column):
-                val = card.num
-                if val < 8:
-                    score += (len(column) - 1 - idx) * 30
+            for idx, c in enumerate(heaps[i]):
+                if c['num'] < 8: 
+                    score += (len(heaps[i]) - 1 - idx) * 30
         return score
 
-    def _get_valid_moves(self, game):
-        valid_moves = []
-        foundation_moves = []
-
-        for from_id in range(4, 16):
-            heap_from = game.card_heaps[from_id].heap_list
-            if not heap_from: continue
-
-            start_indices = range(len(heap_from)) if from_id >= 8 else [len(heap_from) - 1]
-
-            for card_idx in start_indices:
-                num_cards = len(heap_from) - card_idx
-                for to_id in range(16):
-                    if from_id == to_id: continue
-
-                    can_move, _ = game.CheckMoveSequence(from_id, to_id, card_idx)
-                    if can_move:
-                        move = (from_id, to_id, card_idx, num_cards)
-                        if 0 <= to_id <= 3:
-                            foundation_moves.append(move)
-                        else:
-                            valid_moves.append(move)
-
-        return foundation_moves if foundation_moves else valid_moves
-
-    def _apply_move(self, game, move):
-        from_id, to_id, _, num_cards = move
-        cards_to_move = game.card_heaps[from_id].heap_list[-num_cards:]
-        game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
-        game.card_heaps[to_id].heap_list.extend(cards_to_move)
-        for i, card in enumerate(game.card_heaps[to_id].heap_list):
-            card.group_id, card.group_index = to_id, i
-
-    def _undo_move(self, game, move):
-        from_id, to_id, _, num_cards = move
-        cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
-        game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
-        game.card_heaps[from_id].heap_list.extend(cards_to_undo)
-        for i, card in enumerate(game.card_heaps[from_id].heap_list):
-            card.group_id, card.group_index = from_id, i
-
     def solve(self, max_nodes=100000, timeout=60, stop_event=None):
-        self.start_time = time.time()
         process = psutil.Process(os.getpid())
-        self.start_memory = process.memory_info().rss / (1024 ** 2)
+        start_mem = process.memory_info().rss
+        peak_mem = start_mem
+        start_time = time.time()
+        
+        count = 0
+        initial_hash = self._get_state_tuple(self.start_heaps)
+        queue = [(self._heuristic(self.start_heaps), count, self.start_heaps, [], 0)]
+        visited = {initial_hash: 0}
+        expanded_nodes = 0
 
-        open_set = []
-        counter = 0
-
-        current_game = copy.deepcopy(self.initial_game_source)
-        current_path = []
-
-        initial_hash = self._get_game_state_hash(current_game)
-        initial_h = self._heuristic(current_game)
-
-        # Cấu trúc Hàng đợi ưu tiên: (f_score, counter, g_score, h_score, path)
-        heappush(open_set, (initial_h, counter, 0, initial_h, []))
-        counter += 1
-        self.visited_states[initial_hash] = 0
-
-        while open_set and self.expanded_nodes < max_nodes:
+        while queue:
             if stop_event and stop_event.is_set():
-                return self._build_result(False, [], 'Solver stopped!')
-            if time.time() - self.start_time > timeout:
-                self._finalize_metrics(process)
-                return self._build_result(False, [], "Timeout exceeded")
+                return {"solved": False, "error": "Stopped"}
 
-            f_score, _, g_score, h_score, path = heappop(open_set)
-            self.expanded_nodes += 1
+            curr_mem = process.memory_info().rss
+            if curr_mem > peak_mem: peak_mem = curr_mem
 
-            # Delta Replay để đồng bộ trạng thái game với path hiện tại
-            common_len = 0
-            for m1, m2 in zip(current_path, path):
-                if m1 == m2: common_len += 1
-                else: break
-            for move in reversed(current_path[common_len:]): self._undo_move(current_game, move)
-            for move in path[common_len:]: self._apply_move(current_game, move)
-            current_path = path
+            if time.time() - start_time > timeout:
+                return {"solved": False, "error": "Timeout"}
 
-            # Kiểm tra Goal
-            if current_game.CheckWinStrict():
-                self._finalize_metrics(process)
-                return self._build_result(True, path)
+            f, _, current_heaps, path, g_score = heapq.heappop(queue)
+            expanded_nodes += 1
 
-            # Khai triển nhánh mới
-            for move in self._get_valid_moves(current_game):
-                self._apply_move(current_game, move)
-                next_hash = self._get_game_state_hash(current_game)
-                new_g = g_score + 1
+            # Điều kiện thắng
+            if sum(len(current_heaps[i]) for i in range(4)) == 52:
+                actual_used_mb = (peak_mem - start_mem) / (1024 * 1024)
+                return {
+                    "solved": True, 
+                    "solution": path, 
+                    "search_length": len(path),
+                    "expanded_nodes": expanded_nodes,
+                    "search_time": time.time() - start_time,
+                    "memory_used": round(actual_used_mb, 4)
+                }
 
-                # A* check: Cập nhật nếu chưa đi qua hoặc tìm được đường g(n) ngắn hơn
-                if next_hash not in self.visited_states or new_g < self.visited_states[next_hash]:
-                    self.visited_states[next_hash] = new_g
-                    new_h = self._heuristic(current_game)
+            if expanded_nodes > max_nodes:
+                return {"solved": False, "error": "Max nodes reached"}
+
+            # Tính toán tài nguyên trống để xác định max_allowed di chuyển
+            empty_fc = sum(1 for i in range(4, 8) if not current_heaps[i])
+            empty_tab = sum(1 for i in range(8, 16) if not current_heaps[i])
+
+            for from_id, to_id in OPERATIONS:
+                if not current_heaps[from_id]: continue
+                
+                is_target_empty_tab = (8 <= to_id <= 15 and not current_heaps[to_id])
+                effective_empty_tab = empty_tab - 1 if is_target_empty_tab else empty_tab
+                max_allowed = (1 + empty_fc) * (2 ** max(0, effective_empty_tab))
+
+                # Chỉ bốc 1 lá nếu vào Foundation/FreeCell, hoặc bốc xấp bài nếu vào Tableau
+                if to_id < 8:
+                    search_range = [len(current_heaps[from_id]) - 1]
+                else:
+                    search_range = range(max(0, len(current_heaps[from_id]) - max_allowed), len(current_heaps[from_id]))
+
+                for card_idx in search_range:
+                    card = current_heaps[from_id][card_idx]
                     
-                    # Hệ số 2.0 cho Heuristic để tăng tốc độ hội tụ (Weighted A*)
-                    new_f = new_g + 2.0 * new_h
+                    if self._check_move_internal(card, to_id, current_heaps[to_id]):
+                        new_heaps = [h[:] for h in current_heaps]
+                        moving = new_heaps[from_id][card_idx:]
+                        new_heaps[from_id] = new_heaps[from_id][:card_idx]
+                        new_heaps[to_id].extend(moving)
+                        
+                        s_hash = self._get_state_tuple(new_heaps)
+                        new_g = g_score + 1
+                        
+                        if s_hash not in visited or new_g < visited[s_hash]:
+                            visited[s_hash] = new_g
+                            count += 1
+                            h_s = self._heuristic(new_heaps)
+                            # Lưu path chuẩn để UI hiển thị sau khi giải xong
+                            new_path = path + [(from_id, to_id, card_idx)]
+                            heapq.heappush(queue, (new_g + (2.0 * h_s), count, new_heaps, new_path, new_g))
 
-                    heappush(open_set, (new_f, counter, new_g, new_h, path + [move]))
-                    counter += 1
-
-                self._undo_move(current_game, move)
-
-        self._finalize_metrics(process)
-        return self._build_result(False, [], "No solution found within node limit")
-
-    def _finalize_metrics(self, process):
-        self.end_time = time.time()
-        self.end_memory = process.memory_info().rss / (1024 ** 2)
-
-    def _build_result(self, solved, solution, error=None):
-        formatted_sol = [(m[0], m[1], m[2]) for m in solution]
-        return {
-            'solved': solved,
-            'solution': formatted_sol,
-            'search_time': self.end_time - self.start_time if self.end_time else 0,
-            'memory_used': max(0, self.end_memory - self.start_memory) if self.end_memory else 0,
-            'expanded_nodes': self.expanded_nodes,
-            'search_length': len(formatted_sol),
-            'error': error
-        }
+        return {"solved": False, "error": "No solution"}
