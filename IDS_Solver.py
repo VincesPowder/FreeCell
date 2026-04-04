@@ -123,7 +123,7 @@ class IDSSolver:
             if result is True:
                 return self._build_result(True, solution_path, process)
 
-        return self._build_result(False, [], process, "Not found")
+        return self._build_result(False, [], process, "No solution found within node limit")
 
     def _build_result(self, solved, solution, process, error=None):
         end_time = time.time()

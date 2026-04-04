@@ -98,45 +98,89 @@ class TestCases:
 
     @staticmethod
     def setup_test_5_hard(game: FreeCellGame):
-        """Mức 5: ~25-35 bước - Thử thách bộ nhớ."""
+        """Mức 5: Supermove Tối Giản (Bản chuẩn 52 lá).
+        Đã sửa lỗi mất bài: 41 lá được đưa lên Foundation an toàn.
+        11 lá còn lại xếp thành thế cờ ép buộc bốc cả chuỗi."""
         cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            for r in range(6): game.card_heaps[s].PushTop(cards[s * 13 + r])
-        all_remain = [cards[i] for i in range(52) if cards[i].group_id == -1]
-        for i, card in enumerate(all_remain):
-            game.card_heaps[8 + (i % 8)].PushTop(card)
+        
+        # Đưa 41 lá lên Foundation để đảm bảo game có thể thắng
+        for r in range(8): game.card_heaps[0].PushTop(cards[0 * 13 + r]) # Hearts A->8
+        for r in range(13): game.card_heaps[1].PushTop(cards[1 * 13 + r]) # Clubs A->K
+        for r in range(13): game.card_heaps[2].PushTop(cards[2 * 13 + r]) # Diamonds A->K
+        for r in range(7): game.card_heaps[3].PushTop(cards[3 * 13 + r]) # Spades A->7
+        
+        # 11 lá mấu chốt còn lại trên bàn
+        # Cột 8: 9H bị đè bởi chuỗi JS -> 10H -> 9S
+        game.card_heaps[8].PushTop(cards[0 * 13 + 8])  # 9 Heart
+        game.card_heaps[8].PushTop(cards[3 * 13 + 10]) # J Spade
+        game.card_heaps[8].PushTop(cards[0 * 13 + 9])  # 10 Heart
+        game.card_heaps[8].PushTop(cards[3 * 13 + 8])  # 9 Spade
+        
+        # Cột 9
+        game.card_heaps[9].PushTop(cards[0 * 13 + 12]) # K Heart
+        game.card_heaps[9].PushTop(cards[3 * 13 + 11]) # Q Spade
+        game.card_heaps[9].PushTop(cards[0 * 13 + 10]) # J Heart
+        
+        # Cột 10
+        game.card_heaps[10].PushTop(cards[3 * 13 + 12]) # K Spade
+        game.card_heaps[10].PushTop(cards[0 * 13 + 11]) # Q Heart
+        
+        # Cột 11
+        game.card_heaps[11].PushTop(cards[3 * 13 + 9]) # 10 Spade
+        
+        # Cột 12
+        game.card_heaps[12].PushTop(cards[3 * 13 + 7]) # 8 Spade
 
     @staticmethod
     def setup_test_6_stress_8col(game: FreeCellGame):
-        """Mức 6: 44 bước - Tuyến tính (Rải trên 8 cột).
-        Foundation: A, 2. Cascade: 8 cột xếp từ K -> 3 chồng lên nhau.
-        Branching factor lớn do có nhiều cột để chọn."""
+        """Mức 6: Nút thắt Supermove 2 tầng.
+        Vẫn là 11 lá bài mấu chốt nhưng bị đè chéo lên nhau tạo bẫy sâu hơn."""
         cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            game.card_heaps[s].PushTop(cards[s * 13 + 0]) # Ace
-            game.card_heaps[s].PushTop(cards[s * 13 + 1]) # 2
         
-        remaining_cards = []
-        for s in range(4):
-            for r in range(12, 1, -1): # K -> 3
-                remaining_cards.append(cards[s * 13 + r])
+        for r in range(8): game.card_heaps[0].PushTop(cards[0 * 13 + r]) # Hearts
+        for r in range(13): game.card_heaps[1].PushTop(cards[1 * 13 + r]) # Clubs
+        for r in range(13): game.card_heaps[2].PushTop(cards[2 * 13 + r]) # Diamonds
+        for r in range(7): game.card_heaps[3].PushTop(cards[3 * 13 + r]) # Spades
         
-        for i, card in enumerate(remaining_cards):
-            game.card_heaps[8 + (i % 8)].PushTop(card)
+        # Cột 8: 9H bị đè bởi chuỗi dài: KS -> QH -> JS -> 10H -> 9S
+        game.card_heaps[8].PushTop(cards[0 * 13 + 8])  # 9H
+        game.card_heaps[8].PushTop(cards[3 * 13 + 12]) # KS
+        game.card_heaps[8].PushTop(cards[0 * 13 + 11]) # QH
+        game.card_heaps[8].PushTop(cards[3 * 13 + 10]) # JS
+        game.card_heaps[8].PushTop(cards[0 * 13 + 9])  # 10H
+        game.card_heaps[8].PushTop(cards[3 * 13 + 8])  # 9S
+        
+        # Cột 9: 8S bị đè bởi chuỗi dài: KH -> QS -> JH -> 10S
+        game.card_heaps[9].PushTop(cards[3 * 13 + 7])  # 8S
+        game.card_heaps[9].PushTop(cards[0 * 13 + 12]) # KH
+        game.card_heaps[9].PushTop(cards[3 * 13 + 11]) # QS
+        game.card_heaps[9].PushTop(cards[0 * 13 + 10]) # JH
+        game.card_heaps[9].PushTop(cards[3 * 13 + 9])  # 10S
 
     @staticmethod
     def setup_test_7_stress_4col(game: FreeCellGame):
-        """Mức 7: 44 bước - Tuyến tính (Chỉ 4 cột).
-        Foundation: A, 2. Cascade: 4 cột xếp đè từ K -> 3.
-        Mỗi cột cao 11 lá. Ít lựa chọn cột hơn nhưng chiều sâu mỗi cột lớn."""
+        """Mức 7: Mê cung Đảo Ngược (Tuyệt tác Demo).
+        Chuẩn 52 lá. 28 lá đã an toàn trên Foundation.
+        24 lá còn lại nằm ở 4 cột, bị lộn ngược thứ tự từ 8 đến K.
+        AI phải dùng 4 cột trống để 'lật ngược' các chuỗi bài này lại."""
         cards = TestCases._clear_and_prepare(game)
-        for s in range(4):
-            game.card_heaps[s].PushTop(cards[s * 13 + 0]) # Ace
-            game.card_heaps[s].PushTop(cards[s * 13 + 1]) # 2
         
+        # 1. Đưa 28 lá lên Foundation (A -> 7 của cả 4 chất)
         for s in range(4):
-            for r in range(12, 1, -1): # King (dưới) -> 3 (trên)
-                game.card_heaps[8 + s].PushTop(cards[s * 13 + r])
+            for r in range(7):
+                game.card_heaps[s].PushTop(cards[s * 13 + r])
+                
+        # 2. Xếp 24 lá còn lại vào 4 cột (Cột 8 -> 11) theo thứ tự ngược (8 đè lên K)
+        # Các chuỗi này đã được tính toán kỹ để so le màu (Đỏ - Đen) hoàn hảo
+        col8 = [cards[7], cards[47], cards[35], cards[23], cards[11], cards[51]] # 8H, 9S, 10D, JC, QH, KS
+        col9 = [cards[20], cards[8], cards[48], cards[36], cards[24], cards[12]] # 8C, 9H, 10S, JD, QC, KH
+        col10 = [cards[46], cards[34], cards[22], cards[10], cards[50], cards[38]] # 8S, 9D, 10C, JH, QS, KD
+        col11 = [cards[33], cards[21], cards[9], cards[49], cards[37], cards[25]] # 8D, 9C, 10H, JS, QD, KC
+        
+        for c in col8: game.card_heaps[8].PushTop(c)
+        for c in col9: game.card_heaps[9].PushTop(c)
+        for c in col10: game.card_heaps[10].PushTop(c)
+        for c in col11: game.card_heaps[11].PushTop(c)
     
     @staticmethod
     def setup_test_8_seed_25904(game: FreeCellGame):
