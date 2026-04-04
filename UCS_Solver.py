@@ -21,8 +21,37 @@ class UCSSolver:
         self.end_memory = None
         
     def _get_game_state_hash(self, game):
-        """Tạo mã hash đại diện cho trạng thái bàn cờ."""
-        return tuple((c.group_id, c.group_index) for c in game.CARDS)
+        """
+        Mã hash tối ưu: Triệt tiêu tính đối xứng.
+        Sử dụng thuộc tính .color và .num từ class Card trong Freecell_Game.py
+        """
+        # 1. Foundation: Trạng thái của 4 ô Foundation (0-3)
+        # Chỉ cần lưu số lượng lá bài trong mỗi ô (vì bài lên đây luôn theo thứ tự A->K)
+        foundation_state = tuple(len(game.card_heaps[i].heap_list) for i in range(4))
+
+        # 2. FreeCells: Trạng thái của 4 ô FreeCell (4-7)
+        # Lấy (color, num) của từng lá và SORT để 2 trạng thái giống nhau về bài 
+        # nhưng khác vị trí ô tạm sẽ được coi là 1.
+        freecell_cards = []
+        for i in range(4, 8):
+            heap = game.card_heaps[i].heap_list
+            if heap:
+                card = heap[0]
+                # Card trong Freecell_Game.py có .color và .num
+                freecell_cards.append((card.color, card.num))
+        freecell_state = tuple(sorted(freecell_cards))
+
+        # 3. Cascades: Trạng thái của 8 cột bài (8-15)
+        # Mỗi cột là một tuple các (color, num). 
+        # SORT danh sách các cột để triệt tiêu đối xứng khi các cột đổi chỗ cho nhau.
+        cascade_list = []
+        for i in range(8, 16):
+            column = tuple((c.color, c.num) for c in game.card_heaps[i].heap_list)
+            cascade_list.append(column)
+        cascade_state = tuple(sorted(cascade_list))
+
+        # Trả về mã hash tổng hợp
+        return (foundation_state, freecell_state, cascade_state)
     
     def _get_valid_moves(self, game):
         """
@@ -72,7 +101,7 @@ class UCSSolver:
         for i, card in enumerate(game.card_heaps[from_id].heap_list):
             card.group_id, card.group_index = from_id, i
 
-    def solve(self, max_nodes=500000, timeout=450):
+    def solve(self, max_nodes=500000, timeout=300, stop_event=None):
         """
         Thực hiện giải thuật Uniform-Cost Search.
         """
@@ -95,6 +124,8 @@ class UCSSolver:
         self.visited_states.add(initial_hash)
         
         while open_set and self.expanded_nodes < max_nodes:
+            if stop_event and stop_event.is_set():
+                return self._build_result(False, [], 'Solver stopped!')
             if time.time() - self.start_time > timeout:
                 self._finalize_metrics(process)
                 return self._build_result(False, [], "Timeout exceeded")
@@ -133,7 +164,7 @@ class UCSSolver:
                 self._undo_move(current_game, move)
         
         self._finalize_metrics(process)
-        return self._build_result(False, [], "No solution found or node limit reached")
+        return self._build_result(False, [], "No solution found within node limit")
 
     def _finalize_metrics(self, process):
         self.end_time = time.time()
