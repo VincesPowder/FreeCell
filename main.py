@@ -120,7 +120,6 @@ class WindowGame:
         moves_to_play = int(elapsed / self.move_duration)
         
         while self.animation_current_move < moves_to_play and self.animation_current_move < len(self.animation_moves):
-            # --- CHỈ CHỈNH SỬA TỪ ĐÂY ---
             move = self.animation_moves[self.animation_current_move]
             from_id, to_id, card_idx = move # Lấy 3 giá trị
             
@@ -133,13 +132,21 @@ class WindowGame:
                 self.freecell_game.card_heaps[to_id].PushTop(card)
                 
             self.log.append(f"[Animation] Move {self.animation_current_move + 1}/{len(self.animation_moves)}: Heap {from_id} → {to_id}")
-            # --- ĐẾN ĐÂY ---
+            
+            # --- ĐÁNH DẤU LÁ BÀI VỪA DI CHUYỂN VÀ VỊ TRÍ CŨ ---
+            self.anim_highlight = {
+                "from": from_id, 
+                "to": to_id, 
+                "start_idx": len(self.freecell_game.card_heaps[to_id].heap_list) - num_to_move
+            }
+            # --------------------------------------------------
 
             self.log_offset = 0
             self.animation_current_move += 1
         
         if self.animation_current_move >= len(self.animation_moves):
             self.animation_running = False
+            self.anim_highlight = None # Xóa highlight khi animation kết thúc
             self.log.append("Animation complete! All moves played.")
             self.log_offset = 0
             
@@ -301,6 +308,14 @@ class WindowGame:
                                 self.seed_text += event.unicode
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    # --- XỬ LÝ CLICK ẨN MÀN HÌNH WIN ---
+                    if self.freecell_game.CheckWinStrict() and event.button == 1:
+                        # Nếu chưa tắt màn hình WIN thì tắt nó đi
+                        if not getattr(self, 'win_dismissed', False):
+                            self.win_dismissed = True
+                            continue # Bỏ qua click này để không vô tình bấm trúng nút bên dưới
+                    # ------------------------------------
+
                     # Phân biệt nút cuộn và nút click
                     if event.button == 4:  # Scroll up
                         # Nếu chuột đang ở vùng menu Test thì cuộn Test
@@ -609,13 +624,43 @@ class WindowGame:
                     continue
                 rect = self.GetCardRect(pile_id, i)
                 SCREEN.blit(IMAGES[card.color + card.point], (rect.x, rect.y))
+                
+                # --- VẼ VIỀN CHO ANIMATION STYLE HỒNG ĐEN (BÉO RA 4PX) ---
+                if getattr(self, 'animation_running', False) and getattr(self, 'anim_highlight', None):
+                    anim_info = self.anim_highlight
+                    
+                    # 1. Viền HỒNG ĐEN cho các lá bài vừa bay đến (Đích)
+                    if pile_id == anim_info["to"] and i >= anim_info["start_idx"]:
+                        outer_rect = rect.inflate(8, 8) # Nới rộng mỗi bên 4px
+                        pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
+                        
+                    # 2. Viền HỒNG ĐEN cho lá bài cũ vừa bị lộ ra (Nguồn)
+                    if pile_id == anim_info["from"] and i == len(heap) - 1:
+                        outer_rect = rect.inflate(8, 8)
+                        pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
+                # ----------------------------------------------------------------
+            
+            # 3. Viền HỒNG ĐEN cho ô trống (Khi cột nguồn bị lấy sạch bài)
+            if getattr(self, 'animation_running', False) and getattr(self, 'anim_highlight', None):
+                anim_info = self.anim_highlight
+                if pile_id == anim_info["from"] and len(heap) == 0:
+                    outer_rect = base_rect.inflate(8, 8)
+                    pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
 
+        # --- VẼ VIỀN CHO LÁ BÀI KHI ĐANG DÙNG CHUỘT KÉO THẢ (BÉO RA 4PX) ---
         if self.dragging:
             for i, card in enumerate(self.drag_cards):
                 drag_x = mouse_pos[0] + self.mouse_offset_x
                 drag_y = mouse_pos[1] + self.mouse_offset_y + (i * OFFSET_Y)
                 SCREEN.blit(IMAGES[card.color + card.point], (drag_x, drag_y))
-
+                
+                # Tạo khung chữ nhật và béo ra mỗi bên 4px
+                drag_rect = pygame.Rect(drag_x, drag_y, CARD_W, CARD_H)
+                outer_drag_rect = drag_rect.inflate(8, 8)
+                
+                # Vẽ viền bọc bên ngoài mép lá bài, độ bo góc = 6 cho mượt
+                pygame.draw.rect(SCREEN, (255, 0, 127), outer_drag_rect, 4, border_radius=6)
+        # ------------------------------------------------------
         # Thanh tiến trình animation
         if self.animation_running or self.animation_moves:
             bar_x = X_START + GAP*2
@@ -635,6 +680,28 @@ class WindowGame:
                 status_text = f"Animation: {self.animation_current_move}/{len(self.animation_moves)} moves"
                 status_surf = FONT.render(status_text, True, (155, 50, 100))
                 SCREEN.blit(status_surf, status_surf.get_rect(center=status_rect.center))
+                
+        # ... (các code vẽ bài ở trên) ...
+
+        # --- HIỆU ỨNG WIN GAME MỚI ---
+        # Tự động reset lại trạng thái tắt hiệu ứng nếu đang ở một ván chưa thắng
+        if not self.freecell_game.CheckWinStrict():
+            self.win_dismissed = False 
+            
+        # Chỉ vẽ hiệu ứng nếu người chơi chưa bấm chuột để tắt
+        elif not getattr(self, 'win_dismissed', False):
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 210)) # Nền tối mờ làm nổi chữ
+            SCREEN.blit(overlay, (0, 0))
+            win_font = pygame.font.SysFont('impact', 160) 
+            sub_font = pygame.font.SysFont('tahoma', 24, italic=True)
+            color = (255, 200, 230) if int(time.time() * 2) % 2 == 0 else (155, 50, 100)
+            win_shadow = win_font.render("WIN!", True, (30, 0, 10))
+            SCREEN.blit(win_shadow, win_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 6, SCREEN_HEIGHT // 2 - 54)))           
+            win_text = win_font.render("WIN!", True, color)
+            SCREEN.blit(win_text, win_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60)))
+            sub_text = sub_font.render("Click anywhere to view the board", True, (255, 255, 255))
+            SCREEN.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 65)))
 
         pygame.display.update()
 
