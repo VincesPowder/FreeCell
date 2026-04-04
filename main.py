@@ -26,8 +26,10 @@ SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("FreeCell & Solver")
 
 IMAGES = utils.LoadImages()
-FONT = pygame.font.SysFont('arial', 16)
-BTN_FONT = pygame.font.SysFont('arial', 16)
+FONT = pygame.font.SysFont('tahoma', 16)
+BTN_FONT = pygame.font.SysFont('tahoma', 16)
+ICON_FONT = pygame.font.SysFont('arial', 60)
+SUIT_SYMBOLS = {"Heart": "♥", "Diamond": "♦", "Spade": "♠", "Club": "♣"}
 
 class WindowGame:
     def __init__(self):
@@ -118,7 +120,6 @@ class WindowGame:
         moves_to_play = int(elapsed / self.move_duration)
         
         while self.animation_current_move < moves_to_play and self.animation_current_move < len(self.animation_moves):
-            # --- CHỈ CHỈNH SỬA TỪ ĐÂY ---
             move = self.animation_moves[self.animation_current_move]
             from_id, to_id, card_idx = move # Lấy 3 giá trị
             
@@ -131,13 +132,21 @@ class WindowGame:
                 self.freecell_game.card_heaps[to_id].PushTop(card)
                 
             self.log.append(f"[Animation] Move {self.animation_current_move + 1}/{len(self.animation_moves)}: Heap {from_id} → {to_id}")
-            # --- ĐẾN ĐÂY ---
+            
+            # --- ĐÁNH DẤU LÁ BÀI VỪA DI CHUYỂN VÀ VỊ TRÍ CŨ ---
+            self.anim_highlight = {
+                "from": from_id, 
+                "to": to_id, 
+                "start_idx": len(self.freecell_game.card_heaps[to_id].heap_list) - num_to_move
+            }
+            # --------------------------------------------------
 
             self.log_offset = 0
             self.animation_current_move += 1
         
         if self.animation_current_move >= len(self.animation_moves):
             self.animation_running = False
+            self.anim_highlight = None # Xóa highlight khi animation kết thúc
             self.log.append("Animation complete! All moves played.")
             self.log_offset = 0
             
@@ -146,9 +155,14 @@ class WindowGame:
                 self.pending_solver_results = []
                 self.log_offset = 0
     def GetCardRect(self, pile_id, card_index):
-        if pile_id < 8: 
-            return pygame.Rect(X_START + GAP * pile_id, 40, CARD_W, CARD_H)
+        if pile_id < 4: 
+            # Foundation (0-3) chuyển sang bên PHẢI (tương ứng cột 4, 5, 6, 7)
+            return pygame.Rect(X_START + GAP * (pile_id + 4), 40, CARD_W, CARD_H)
+        elif pile_id < 8: 
+            # FreeCell (4-7) chuyển sang bên TRÁI (tương ứng cột 0, 1, 2, 3)
+            return pygame.Rect(X_START + GAP * (pile_id - 4), 40, CARD_W, CARD_H)
         else: 
+            # Các cột bài chính (8-15) giữ nguyên bên dưới
             return pygame.Rect(X_START + GAP * (pile_id - 8), 210 + OFFSET_Y * card_index, CARD_W, CARD_H)
     
     def run_solver_thread(self, solver_algo):
@@ -156,7 +170,7 @@ class WindowGame:
             self.stop_event.clear()
             if solver_algo == "BFS":
                 solver = BFSSolver(self.freecell_game)
-                self.solver_result = solver.solve(max_nodes=1000000, timeout=600, stop_event=self.stop_event)
+                self.solver_result = solver.solve(max_nodes=1000000, timeout=300, stop_event=self.stop_event)
             elif solver_algo == "IDS":
                 solver = IDSSolver(self.freecell_game)
                 self.solver_result = solver.solve(max_depth=1000, timeout=300, stop_event=self.stop_event)
@@ -294,6 +308,14 @@ class WindowGame:
                                 self.seed_text += event.unicode
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    # --- XỬ LÝ CLICK ẨN MÀN HÌNH WIN ---
+                    if self.freecell_game.CheckWinStrict() and event.button == 1:
+                        # Nếu chưa tắt màn hình WIN thì tắt nó đi
+                        if not getattr(self, 'win_dismissed', False):
+                            self.win_dismissed = True
+                            continue # Bỏ qua click này để không vô tình bấm trúng nút bên dưới
+                    # ------------------------------------
+
                     # Phân biệt nút cuộn và nút click
                     if event.button == 4:  # Scroll up
                         # Nếu chuột đang ở vùng menu Test thì cuộn Test
@@ -398,13 +420,13 @@ class WindowGame:
                             heap = self.freecell_game.card_heaps[p_id].heap_list
                             self.drag_cards = heap[c_idx:]
                             
-                            can_drag, error_msg = self.freecell_game.CheckMoveSequence(p_id, p_id, c_idx)
-                            
+                           # Đã xóa biến can_drag thừa thãi vì đích đến lúc này là chưa xác định
                             if not self.freecell_game.IsValidSequence(self.drag_cards):
                                 self.log.append("Invalid sequence!")
                                 self.log_offset = 0
                             else:
-                                max_allowed = self.freecell_game.GetMaxMovable(p_id, len(self.drag_cards))
+                                # Truyền thêm -1 làm đích đến tạm thời
+                                max_allowed = self.freecell_game.GetMaxMovable(p_id, -1, len(self.drag_cards))
                                 if len(self.drag_cards) > max_allowed:
                                     free_cells = sum(1 for i in range(4,8) if not self.freecell_game.card_heaps[i].heap_list)
                                     self.log.append(f"Can only move max {max_allowed} cards (free cells: {free_cells})")
@@ -456,8 +478,15 @@ class WindowGame:
                 else:
                     del self.button_highlight_time[name]
             
+            # Vẽ nền nút
             color = (200, 230, 150) if is_highlighted else (255, 200, 230)
             pygame.draw.rect(SCREEN, color, rect, border_radius=5)
+            
+            # --- Vẽ viền kép (Hồng ngoài, Trắng trong) ---
+            pygame.draw.rect(SCREEN, (155, 50, 100), rect, 2, border_radius=5) # Viền hồng
+            inner_rect = rect.inflate(-4, -4)
+            pygame.draw.rect(SCREEN, (255, 255, 255), inner_rect, 2, border_radius=3) # Viền trắng
+            # ---------------------------------------------
             
             text_surf = FONT.render(name, True, (155, 50, 100))
             SCREEN.blit(text_surf, text_surf.get_rect(center=rect.center))
@@ -474,14 +503,19 @@ class WindowGame:
         if self.solver_menu_open:
             for algo, rect in self.solver_menu.items():
                 color = (200, 230, 150) if self.solver_selected == algo else (255, 200, 230)
-                pygame.draw.rect(SCREEN, color, rect, border_radius=4)
-                pygame.draw.rect(SCREEN, (155, 50, 100), rect, 1, border_radius=4)
+                # Đổi border_radius thành 5 cho tròn giống nút ngoài
+                pygame.draw.rect(SCREEN, color, rect, border_radius=5)
                 
-                text = algo
-                item_text = FONT.render(text, True, (155, 50, 100))
+                # --- Vẽ viền kép y hệt nút chính ---
+                pygame.draw.rect(SCREEN, (155, 50, 100), rect, 2, border_radius=5) # Viền hồng dày 2px
+                inner_rect = rect.inflate(-4, -4)
+                pygame.draw.rect(SCREEN, (255, 255, 255), inner_rect, 2, border_radius=3) # Viền trắng dày 2px
+                # -----------------------------------
+                
+                item_text = FONT.render(algo, True, (155, 50, 100))
                 SCREEN.blit(item_text, item_text.get_rect(center=rect.center))
 
-        # --- PHẦN VẼ MENU TEST VÀ THANH CUỘN ĐÃ CHỈNH SỬA ---
+      # --- PHẦN VẼ MENU TEST VÀ THANH CUỘN ĐÃ CHỈNH SỬA ---
         if self.test_menu_open:
             visible_tests = list(self.test_menu.keys())[self.test_menu_scroll_offset:self.test_menu_scroll_offset + self.max_visible_tests]
             for idx, test_name in enumerate(visible_tests):
@@ -490,11 +524,19 @@ class WindowGame:
                 
                 test_num = self.test_menu[test_name]
                 color = (200, 230, 150) if self.seed == -test_num else (255, 200, 230)
-                pygame.draw.rect(SCREEN, color, test_rect, border_radius=4)
-                pygame.draw.rect(SCREEN, (155, 50, 100), test_rect, 1, border_radius=4)
+                # Đổi border_radius thành 5 cho tròn giống nút ngoài
+                pygame.draw.rect(SCREEN, color, test_rect, border_radius=5)
+                
+                # --- Vẽ viền kép y hệt nút chính ---
+                pygame.draw.rect(SCREEN, (155, 50, 100), test_rect, 2, border_radius=5) # Viền hồng dày 2px
+                inner_rect = test_rect.inflate(-4, -4)
+                pygame.draw.rect(SCREEN, (255, 255, 255), inner_rect, 2, border_radius=3) # Viền trắng dày 2px
+                # -----------------------------------
                 
                 item_text = FONT.render(test_name, True, (155, 50, 100))
                 SCREEN.blit(item_text, item_text.get_rect(center=test_rect.center))
+            
+            # (Giữ nguyên đoạn code vẽ thanh cuộn scroll_bar bên dưới của bạn)
             
             # Vẽ thanh cuộn khớp với các nút Test
             if len(self.test_menu) > self.max_visible_tests:
@@ -514,32 +556,67 @@ class WindowGame:
                 thumb_pos = int(scroll_bar_y + scroll_ratio * (total_menu_h - thumb_h))
                 pygame.draw.rect(SCREEN, (155, 50, 100), pygame.Rect(scroll_bar_x, thumb_pos, scroll_bar_width, thumb_h), border_radius=2)
 
+        # --- VẼ KHUNG TO CHO LOG ---
+        log_rect = pygame.Rect(40, PANEL_Y + 10, 620, 105)
+        
+        # 1. Vẽ nền trắng
+        pygame.draw.rect(SCREEN, (255, 255, 255), log_rect, border_radius=5)
+        # 2. Vẽ viền hồng đậm bên ngoài
+        pygame.draw.rect(SCREEN, (155, 50, 100), log_rect, 2, border_radius=5)
+        # 3. Vẽ viền hồng nhạt bên trong
+        inner_log_rect = log_rect.inflate(-4, -4)
+        pygame.draw.rect(SCREEN, (255, 200, 230), inner_log_rect, 2, border_radius=3)
+        # ---------------------------
+
         # Log ở dưới panel
         max_scroll = max(0, len(self.log) - 4)
         display_start = max(0, len(self.log) - 4 - self.log_offset)
         display_logs = self.log[display_start:display_start + 4]
         
         for i, msg in enumerate(display_logs):
-            log_text = FONT.render(msg, True, (255, 200, 230))
-            SCREEN.blit(log_text, (50, PANEL_Y + 20 + i * 22))
+            # --- Chữ màu hồng đậm ---
+            log_text = FONT.render(msg, True, (155, 50, 100)) 
+            SCREEN.blit(log_text, (50, PANEL_Y + 15 + i * 24)) # Chỉnh lại khoảng cách chữ 1 chút cho thoáng
         
         # Thanh cuộn log chính
         scroll_bar_x = 640
-        scroll_bar_y = PANEL_Y + 10
-        scroll_bar_height = 100 
+        scroll_bar_y = PANEL_Y + 15
+        scroll_bar_height = 90 
         scroll_bar_width = 8
-        pygame.draw.rect(SCREEN, (255, 200, 230), pygame.Rect(scroll_bar_x, scroll_bar_y, scroll_bar_width, scroll_bar_height))
+        pygame.draw.rect(SCREEN, (255, 200, 230), pygame.Rect(scroll_bar_x, scroll_bar_y, scroll_bar_width, scroll_bar_height), border_radius=4)
         
         if max_scroll > 0:
             thumb_height = max(15, int(scroll_bar_height * 2 / len(self.log)))
             scroll_ratio = (max_scroll - self.log_offset) / max_scroll
             thumb_pos = int(scroll_bar_y + scroll_ratio * (scroll_bar_height - thumb_height))
-            pygame.draw.rect(SCREEN, (155, 50, 100), pygame.Rect(scroll_bar_x, thumb_pos, scroll_bar_width, thumb_height), border_radius=2)
+            pygame.draw.rect(SCREEN, (155, 50, 100), pygame.Rect(scroll_bar_x, thumb_pos, scroll_bar_width, thumb_height), border_radius=4)
+            
 
         # Vẽ bài
         for pile_id in range(16):
             base_rect = self.GetCardRect(pile_id, 0)
-            pygame.draw.rect(SCREEN, (255, 255, 255), base_rect, 1, border_radius=5)
+            
+            if pile_id < 4: # Ô Foundation (Bên phải)
+                pygame.draw.rect(SCREEN, (255, 255, 255), base_rect, border_radius=5)
+                pygame.draw.rect(SCREEN, (155, 50, 100), base_rect, 2, border_radius=5) # Chỉ vẽ viền hồng
+                
+                # Vẽ ký tự Unicode siêu to làm icon mờ
+                if not self.freecell_game.card_heaps[pile_id].heap_list:
+                    suit = self.freecell_game.card_heaps[pile_id].color
+                    symbol = SUIT_SYMBOLS.get(suit, "")
+                    
+                    # Render chữ với màu hồng nhạt (255, 150, 180)
+                    icon_surf = ICON_FONT.render(symbol, True, (255, 150, 180)) 
+                    SCREEN.blit(icon_surf, icon_surf.get_rect(center=base_rect.center))
+            
+            elif pile_id < 8: # Ô FreeCell (Bên trái)
+                pygame.draw.rect(SCREEN, (255, 200, 230), base_rect, border_radius=5)  # Nền hồng nhạt
+                pygame.draw.rect(SCREEN, (155, 50, 100), base_rect, 2, border_radius=5) 
+                inner_rect = base_rect.inflate(-4, -4) 
+                pygame.draw.rect(SCREEN, (255, 255, 255), inner_rect, 2, border_radius=3)
+            
+            else: # Các cột bài chính bên dưới
+                pygame.draw.rect(SCREEN, (255, 255, 255), base_rect, 1, border_radius=5)
             
             heap = self.freecell_game.card_heaps[pile_id].heap_list
             for i, card in enumerate(heap):
@@ -547,13 +624,43 @@ class WindowGame:
                     continue
                 rect = self.GetCardRect(pile_id, i)
                 SCREEN.blit(IMAGES[card.color + card.point], (rect.x, rect.y))
+                
+                # --- VẼ VIỀN CHO ANIMATION STYLE HỒNG ĐEN (BÉO RA 4PX) ---
+                if getattr(self, 'animation_running', False) and getattr(self, 'anim_highlight', None):
+                    anim_info = self.anim_highlight
+                    
+                    # 1. Viền HỒNG ĐEN cho các lá bài vừa bay đến (Đích)
+                    if pile_id == anim_info["to"] and i >= anim_info["start_idx"]:
+                        outer_rect = rect.inflate(8, 8) # Nới rộng mỗi bên 4px
+                        pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
+                        
+                    # 2. Viền HỒNG ĐEN cho lá bài cũ vừa bị lộ ra (Nguồn)
+                    if pile_id == anim_info["from"] and i == len(heap) - 1:
+                        outer_rect = rect.inflate(8, 8)
+                        pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
+                # ----------------------------------------------------------------
+            
+            # 3. Viền HỒNG ĐEN cho ô trống (Khi cột nguồn bị lấy sạch bài)
+            if getattr(self, 'animation_running', False) and getattr(self, 'anim_highlight', None):
+                anim_info = self.anim_highlight
+                if pile_id == anim_info["from"] and len(heap) == 0:
+                    outer_rect = base_rect.inflate(8, 8)
+                    pygame.draw.rect(SCREEN, (255, 0, 127), outer_rect, 4, border_radius=6)
 
+        # --- VẼ VIỀN CHO LÁ BÀI KHI ĐANG DÙNG CHUỘT KÉO THẢ (BÉO RA 4PX) ---
         if self.dragging:
             for i, card in enumerate(self.drag_cards):
                 drag_x = mouse_pos[0] + self.mouse_offset_x
                 drag_y = mouse_pos[1] + self.mouse_offset_y + (i * OFFSET_Y)
                 SCREEN.blit(IMAGES[card.color + card.point], (drag_x, drag_y))
-
+                
+                # Tạo khung chữ nhật và béo ra mỗi bên 4px
+                drag_rect = pygame.Rect(drag_x, drag_y, CARD_W, CARD_H)
+                outer_drag_rect = drag_rect.inflate(8, 8)
+                
+                # Vẽ viền bọc bên ngoài mép lá bài, độ bo góc = 6 cho mượt
+                pygame.draw.rect(SCREEN, (255, 0, 127), outer_drag_rect, 4, border_radius=6)
+        # ------------------------------------------------------
         # Thanh tiến trình animation
         if self.animation_running or self.animation_moves:
             bar_x = X_START + GAP*2
@@ -573,6 +680,28 @@ class WindowGame:
                 status_text = f"Animation: {self.animation_current_move}/{len(self.animation_moves)} moves"
                 status_surf = FONT.render(status_text, True, (155, 50, 100))
                 SCREEN.blit(status_surf, status_surf.get_rect(center=status_rect.center))
+                
+        # ... (các code vẽ bài ở trên) ...
+
+        # --- HIỆU ỨNG WIN GAME MỚI ---
+        # Tự động reset lại trạng thái tắt hiệu ứng nếu đang ở một ván chưa thắng
+        if not self.freecell_game.CheckWinStrict():
+            self.win_dismissed = False 
+            
+        # Chỉ vẽ hiệu ứng nếu người chơi chưa bấm chuột để tắt
+        elif not getattr(self, 'win_dismissed', False):
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 210)) # Nền tối mờ làm nổi chữ
+            SCREEN.blit(overlay, (0, 0))
+            win_font = pygame.font.SysFont('impact', 160) 
+            sub_font = pygame.font.SysFont('tahoma', 24, italic=True)
+            color = (255, 200, 230) if int(time.time() * 2) % 2 == 0 else (155, 50, 100)
+            win_shadow = win_font.render("WIN!", True, (30, 0, 10))
+            SCREEN.blit(win_shadow, win_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 6, SCREEN_HEIGHT // 2 - 54)))           
+            win_text = win_font.render("WIN!", True, color)
+            SCREEN.blit(win_text, win_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60)))
+            sub_text = sub_font.render("Click anywhere to view the board", True, (255, 255, 255))
+            SCREEN.blit(sub_text, sub_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 65)))
 
         pygame.display.update()
 
