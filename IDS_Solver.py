@@ -4,21 +4,43 @@ import os
 import copy
 
 class IDSSolver:
-    def __init__(self, game_state):
-        self.initial_game_source = game_state
+    def __init__(self, game_state, on_move_callback=None):
+        self.initial_game = copy.deepcopy(game_state)
         self.expanded_nodes = 0
         self.start_time = None
+        self.end_time = None
         self.start_memory = None
-        self.stop_event = None
+        self.end_memory = None
+        self.search_length = 0
+        self.on_move_callback = on_move_callback
 
     def _get_game_state_hash(self, game):
-        # Dùng bytes thay vì tuple → hash nhanh hơn đáng kể
-        # & 0xFF để xử lý giá trị âm (-1 → 255), tránh lỗi range(0,256)
-        return bytes(
-            b & 0xFF
-            for c in game.CARDS
-            for b in (c.group_id, c.group_index)
+        """Tạo mã hash tối ưu, loại bỏ tính đối xứng của FreeCell và Cascade"""
+        # 1. Foundations (0-3): Chỉ lưu giá trị (num) lớn nhất của mỗi chất
+        foundations = tuple(
+            game.card_heaps[i].heap_list[-1].num if game.card_heaps[i].heap_list else 0
+            for i in range(4)
         )
+
+        # 2. Freecells (4-7): Sort để đồng nhất các ô Freecell (bỏ vào ô nào cũng giống nhau)
+        freecells = []
+        for i in range(4, 8):
+            if game.card_heaps[i].heap_list:
+                c = game.card_heaps[i].heap_list[0]
+                freecells.append((c.color, c.num))
+        freecells.sort()
+
+        # 3. Cascades (8-15): Sort các cột để đồng nhất việc dùng các cột rỗng
+        cascades = []
+        for i in range(8, 16):
+            col = tuple((c.color, c.num) for c in game.card_heaps[i].heap_list)
+            cascades.append(col)
+        cascades.sort()
+
+        return (foundations, tuple(freecells), tuple(cascades))
+
+    def _check_win(self, game):
+        return game.CheckWinStrict()
 
     def _get_valid_moves(self, game):
         valid_moves = []
@@ -26,113 +48,173 @@ class IDSSolver:
 
         for from_id in range(4, 16):
             heap_from = game.card_heaps[from_id].heap_list
-            if not heap_from:
+            if len(heap_from) == 0:
                 continue
 
-            # Lấy chỉ số của quân bài trên cùng (Top card index)
-            card_idx = len(heap_from) - 1
+            # FreeCell chỉ bốc 1 lá, Cascade bốc được chuỗi
+            start_indices = range(len(heap_from)) if from_id >= 8 else [len(heap_from) - 1]
 
-            for to_id in range(16):
-                if from_id == to_id:
-                    continue
+            for card_idx in start_indices:
+                num_cards = len(heap_from) - card_idx
+                for to_id in range(16):
+                    if from_id == to_id:
+                        continue
 
-                if game.CheckMove(from_id, to_id):
-                    # TRẢ VỀ 3 GIÁ TRỊ: (từ đâu, đến đâu, chỉ số nào)
-                    if 0 <= to_id <= 3:
-                        foundation_moves.append((from_id, to_id, card_idx))
-                    else:
-                        valid_moves.append((from_id, to_id, card_idx))
+                    if 4 <= from_id <= 7 and 4 <= to_id <= 7:
+                        continue
 
-        return foundation_moves if foundation_moves else valid_moves
+                    can_move, _ = game.CheckMoveSequence(from_id, to_id, card_idx)
+                    if can_move:
+                        move = (from_id, to_id, card_idx, num_cards)
+                        if 0 <= to_id <= 3:
+                            foundation_moves.append(move)
+                        else:
+                            valid_moves.append(move)
 
-    def _dfs_limited(self, game, path, visited, depth_limit, timeout):
+        if foundation_moves:
+            return foundation_moves
+        return valid_moves
+
+    def _apply_move(self, game, move):
+        from_id, to_id, card_idx, num_cards = move
+        cards_to_move = game.card_heaps[from_id].heap_list[-num_cards:]
+        game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
+        game.card_heaps[to_id].heap_list.extend(cards_to_move)
+
+        # Cập nhật group_id và group_index cho UI
+        for i, card in enumerate(game.card_heaps[to_id].heap_list):
+            card.group_id = to_id
+            card.group_index = i
+
+    def _undo_move(self, game, move):
+        """Hoàn tác nước đi để đưa bàn cờ về trạng thái trước đó."""
+        from_id, to_id, card_idx, num_cards = move
+        cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
+        game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
+        game.card_heaps[from_id].heap_list.extend(cards_to_undo)
+
+        # Cập nhật lại group_id và group_index
+        for i, card in enumerate(game.card_heaps[from_id].heap_list):
+            card.group_id = from_id
+            card.group_index = i
+
+    def _dfs_limited(self, game, path, ancestors, visited_global, depth_limit, timeout):
+        """
+        DFS giới hạn độ sâu với visited 2 tầng:
+
+        - ancestors (set hash): các trạng thái đang có trên đường đi hiện tại.
+          Thêm khi đi xuống, XÓA khi backtrack → tránh vòng lặp trên path.
+
+        - visited_global (dict hash → min_depth_reached): trạng thái đã thăm
+          ở bất kỳ nhánh nào trong vòng lặp depth này, kèm độ sâu nhỏ nhất đã đến.
+          Nếu node hiện tại ở depth >= min_depth đã ghi nhận → bỏ qua (không thể
+          tìm được đường ngắn hơn qua đây).
+          KHÔNG xóa khi backtrack → cắt tỉa toàn cục trong cùng 1 vòng depth.
+        """
         if self.stop_event and self.stop_event.is_set():
             return "STOPPED"
+
         self.expanded_nodes += 1
 
-        # Check Win
-        if game.CheckWinStrict():
-            return True  # path đã chứa đủ nước đi, signal thành công
+        if self._check_win(game):
+            return True
 
-        if len(path) >= depth_limit:
+        current_depth = len(path)
+        if current_depth >= depth_limit:
             return None
 
         if time.time() - self.start_time > timeout:
             return "TIMEOUT"
 
-        moves = self._get_valid_moves(game)
-        for move in moves:
-            from_id, to_id, _ = move
+        for move in self._get_valid_moves(game):
+            self._apply_move(game, move)
+            child_hash = self._get_game_state_hash(game)
+            child_depth = current_depth + 1
 
-            # Tiến 1 bước
-            game.Move(from_id, to_id)
-            current_hash = self._get_game_state_hash(game)
+            # Tầng 1: bỏ qua nếu trạng thái đang trên đường đi (tránh vòng lặp)
+            skip = child_hash in ancestors
 
-            if current_hash not in visited:
-                visited.add(current_hash)
-                path.append(move)  # Dùng append/pop thay vì path + [move] → tránh tạo list mới mỗi bước
+            # Tầng 2: bỏ qua nếu đã thăm trạng thái này ở độ sâu <= child_depth
+            # (nghĩa là trước đây đã mở rộng từ đây với nhiều budget hơn hoặc bằng → không cần làm lại)
+            if not skip:
+                prev_depth = visited_global.get(child_hash, None)
+                if prev_depth is not None and prev_depth <= child_depth:
+                    skip = True
 
-                result = self._dfs_limited(game, path, visited, depth_limit, timeout)
+            if not skip:
+                visited_global[child_hash] = child_depth
+                ancestors.add(child_hash)
+                path.append(move)
+
+                result = self._dfs_limited(game, path, ancestors, visited_global, depth_limit, timeout)
 
                 if result == "TIMEOUT":
-                    game.Move(to_id, from_id)
+                    self._undo_move(game, move)
                     return "TIMEOUT"
 
                 if result is True:
-                    game.Move(to_id, from_id)
+                    self._undo_move(game, move)
                     return True
 
                 path.pop()
-                # KHÔNG xóa khỏi visited → tránh thăm lại trạng thái trong cùng iteration
-                # Đây là tối ưu quan trọng: giữ visited giúp cắt tỉa mạnh hơn
+                ancestors.discard(child_hash)  # Backtrack: xóa khỏi ancestors
 
-            # Lùi 1 bước (Undo)
-            game.Move(to_id, from_id)
+            self._undo_move(game, move)
 
         return None
 
     def solve(self, max_depth=100, timeout=300, stop_event=None):
-        self.stop_event = stop_event # Lưu lại để hàm DFS gọi
+        self.stop_event = stop_event
         self.start_time = time.time()
         process = psutil.Process(os.getpid())
         self.start_memory = process.memory_info().rss / (1024 ** 2)
         self.expanded_nodes = 0
 
-        initial_hash = self._get_game_state_hash(self.initial_game_source)
+        current_game = copy.deepcopy(self.initial_game)
 
-        # Chỉ deepcopy 1 lần duy nhất (thay vì deepcopy mỗi iteration IDS)
-        # Game state được khôi phục bằng Undo moves sau mỗi bước DFS
-        current_game = copy.deepcopy(self.initial_game_source)
+        if self._check_win(current_game):
+            return self._finalize(True, [])
 
-        solution_path = []
+        initial_hash = self._get_game_state_hash(current_game)
 
         # IDS: Chạy DFS lặp lại với độ sâu tăng dần
         for depth in range(1, max_depth + 1):
-            visited = {initial_hash}
+            # ancestors: hash trên đường đi hiện tại, xóa khi backtrack
+            ancestors = {initial_hash}
+            # visited_global: hash → độ sâu nhỏ nhất đã thăm trong vòng lặp này
+            visited_global = {initial_hash: 0}
             solution_path = []
 
-            result = self._dfs_limited(current_game, solution_path, visited, depth, timeout)
+            result = self._dfs_limited(
+                current_game, solution_path,
+                ancestors, visited_global,
+                depth, timeout
+            )
 
             if result == "STOPPED":
-                return self._build_result(False, [], process, "Solver stopped!")
+                return self._finalize(False, [], "Solver stopped!")
             if result == "TIMEOUT":
                 break
-
             if result is True:
-                return self._build_result(True, solution_path, process)
+                return self._finalize(True, solution_path)
 
-        return self._build_result(False, [], process, "No solution found within node limit")
+        return self._finalize(False, [], "No solution found within node limit")
 
-    def _build_result(self, solved, solution, process, error=None):
-        end_time = time.time()
-        end_mem = process.memory_info().rss / (1024 ** 2)
+    def _finalize(self, solved, solution, error=None):
+        self.end_time = time.time()
+        process = psutil.Process(os.getpid())
+        self.end_memory = process.memory_info().rss / (1024 ** 2)
+
+        # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
+        formatted_solution = [(m[0], m[1], m[2]) for m in solution]
+
         res = {
             'solved': solved,
-            'solution': solution,
-            'search_time': end_time - self.start_time,
-            'memory_used': max(0, end_mem - self.start_memory),
+            'solution': formatted_solution,
+            'search_time': self.end_time - self.start_time,
+            'memory_used': max(0, self.end_memory - self.start_memory) if self.end_memory else 0,
             'expanded_nodes': self.expanded_nodes,
-            'search_length': len(solution)
+            'search_length': len(formatted_solution)
         }
         if error:
             res['error'] = error
