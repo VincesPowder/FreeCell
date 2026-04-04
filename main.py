@@ -420,13 +420,13 @@ class WindowGame:
                             heap = self.freecell_game.card_heaps[p_id].heap_list
                             self.drag_cards = heap[c_idx:]
                             
-                            can_drag, error_msg = self.freecell_game.CheckMoveSequence(p_id, p_id, c_idx)
-                            
+                           # Đã xóa biến can_drag thừa thãi vì đích đến lúc này là chưa xác định
                             if not self.freecell_game.IsValidSequence(self.drag_cards):
                                 self.log.append("Invalid sequence!")
                                 self.log_offset = 0
                             else:
-                                max_allowed = self.freecell_game.GetMaxMovable(p_id, len(self.drag_cards))
+                                # Truyền thêm -1 làm đích đến tạm thời
+                                max_allowed = self.freecell_game.GetMaxMovable(p_id, -1, len(self.drag_cards))
                                 if len(self.drag_cards) > max_allowed:
                                     free_cells = sum(1 for i in range(4,8) if not self.freecell_game.card_heaps[i].heap_list)
                                     self.log.append(f"Can only move max {max_allowed} cards (free cells: {free_cells})")
