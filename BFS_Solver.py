@@ -1,6 +1,7 @@
-import copy
 import time
-import tracemalloc
+import psutil
+import os
+import copy
 from collections import deque
 from Freecell_Game import FreeCellGame
 
@@ -104,7 +105,8 @@ class BFSSolver:
 
     def solve(self, max_nodes=100000, timeout=300, stop_event=None):
         self.start_time = time.time()
-        tracemalloc.start()
+        process = psutil.Process(os.getpid())
+        self.start_memory = process.memory_info().rss / (1024 ** 2)
         
         queue = deque()
         current_game = copy.deepcopy(self.initial_game)
@@ -153,8 +155,8 @@ class BFSSolver:
 
     def _finalize(self, solved, solution, error=None):
         self.end_time = time.time()
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        process = psutil.Process(os.getpid())
+        self.end_memory = process.memory_info().rss / (1024 ** 2)
         
         # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
         formatted_solution = [(m[0], m[1], m[2]) for m in solution]
@@ -163,7 +165,7 @@ class BFSSolver:
             'solved': solved,
             'solution': formatted_solution,
             'search_time': self.end_time - self.start_time,
-            'memory_used': peak / (1024 ** 2),
+            'memory_used': max(0, self.end_memory - self.start_memory) if self.end_memory else 0,
             'expanded_nodes': self.expanded_nodes,
             'search_length': len(formatted_solution)
         }

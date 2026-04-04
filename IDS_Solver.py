@@ -1,5 +1,4 @@
 import time
-import tracemalloc
 import psutil
 import os
 import copy
@@ -95,7 +94,6 @@ class IDSSolver:
     def solve(self, max_depth=100, timeout=300, stop_event=None):
         self.stop_event = stop_event # Lưu lại để hàm DFS gọi
         self.start_time = time.time()
-        tracemalloc.start()
         process = psutil.Process(os.getpid())
         self.start_memory = process.memory_info().rss / (1024 ** 2)
         self.expanded_nodes = 0
@@ -123,7 +121,7 @@ class IDSSolver:
             if result is True:
                 return self._build_result(True, solution_path, process)
 
-        return self._build_result(False, [], process, "Not found")
+        return self._build_result(False, [], process, "No solution found within node limit")
 
     def _build_result(self, solved, solution, process, error=None):
         end_time = time.time()

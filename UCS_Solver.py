@@ -135,7 +135,7 @@ class UCSSolver:
                 self._undo_move(current_game, move)
         
         self._finalize_metrics(process)
-        return self._build_result(False, [], "No solution found or node limit reached")
+        return self._build_result(False, [], "No solution found within node limit")
 
     def _finalize_metrics(self, process):
         self.end_time = time.time()
