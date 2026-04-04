@@ -16,7 +16,6 @@ def LoadImages():
     except:
         IMAGES["background"] = pygame.Surface((SCREEN_W, SCREEN_H))
         IMAGES["background"].fill((0, 100, 0))
-
     try:
         win = pygame.image.load("images/win.png").convert_alpha()
         IMAGES["win"] = pygame.transform.smoothscale(win, (400, 200))
