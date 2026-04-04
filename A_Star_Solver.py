@@ -28,7 +28,6 @@ class AStarSolver:
         return (fnd, tuple(f_cells), tuple(tbl))
 
     def _check_move_internal(self, card, to_id, target_heap):
-        """Tự kiểm tra luật di chuyển bên trong Solver - Tuyệt đối không gọi self.game."""
         # 1. Foundation (0-3)
         if 0 <= to_id <= 3:
             if not target_heap:
