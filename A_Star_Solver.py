@@ -7,7 +7,7 @@ from Freecell_Game import OPERATIONS
 class AStarSolver:
     def __init__(self, game_state):
         self.game = game_state
-        # Lưu trạng thái bài ban đầu
+        # Lưu trạng thái bài ban đầu dưới dạng list bản sao
         self.start_heaps = [h.heap_list[:] for h in game_state.card_heaps]
 
     def _get_state_tuple(self, heaps):
@@ -40,11 +40,11 @@ class AStarSolver:
                     score += (len(column) - 1 - idx) * 30
         return score
 
-    def solve(self, max_nodes=100000, timeout=60):
-        # KHỞI TẠO ĐO RAM CHUẨN
+    def solve(self, max_nodes=100000, timeout=60, stop_event=None):
+        # KHỞI TẠO ĐO RAM CHUẨN (Hệ thống)
         process = psutil.Process(os.getpid())
         start_mem = process.memory_info().rss
-        peak_mem = start_mem # Theo dõi đỉnh để tránh số âm do Garbage Collection
+        peak_mem = start_mem 
         
         start_time = time.time()
         count = 0
@@ -56,18 +56,23 @@ class AStarSolver:
         expanded_nodes = 0
 
         while queue:
+            # Kiểm tra nếu UI yêu cầu dừng khẩn cấp
+            if stop_event and stop_event.is_set():
+                return {"solved": False, "error": "Solver stopped!"}
+
             # CẬP NHẬT PEAK MEMORY LIÊN TỤC
             curr_mem = process.memory_info().rss
             if curr_mem > peak_mem:
                 peak_mem = curr_mem
 
+            # Kiểm tra thời gian thực thi
             if time.time() - start_time > timeout:
                 return {"solved": False, "error": "Timeout", "search_time": timeout}
 
             f, _, current_heaps, path, g_score = heapq.heappop(queue)
             expanded_nodes += 1
 
-            # Kiểm tra điều kiện thắng
+            # Kiểm tra điều kiện thắng (52 lá trên Foundation)
             if sum(len(current_heaps[i]) for i in range(4)) == 52:
                 actual_used_mb = (peak_mem - start_mem) / (1024 * 1024)
                 return {
@@ -82,7 +87,7 @@ class AStarSolver:
             if expanded_nodes > max_nodes:
                 return {"solved": False, "error": "Max nodes reached"}
 
-            # TÍNH TOÁN TÀI NGUYÊN TRỐNG HIỆN TẠI
+            # TÍNH TOÁN TÀI NGUYÊN TRỐNG
             empty_fc = sum(1 for i in range(4, 8) if not current_heaps[i])
             empty_tab = sum(1 for i in range(8, 16) if not current_heaps[i])
 
@@ -90,17 +95,15 @@ class AStarSolver:
                 heap_from = current_heaps[from_id]
                 if not heap_from: continue
                 
-                # CÔNG THỨC CHUẨN: Tính số lá tối đa có thể move cùng lúc
-                # Nếu di chuyển vào cột Tableau trống, nó không được tính là 'cột trống' trong công thức
+                # Tính số lá tối đa có thể di chuyển theo luật FreeCell
                 is_target_empty_tab = (8 <= to_id <= 15 and not current_heaps[to_id])
                 effective_empty_tab = empty_tab - 1 if is_target_empty_tab else empty_tab
                 max_allowed = (1 + empty_fc) * (2 ** max(0, effective_empty_tab))
 
-                # GIỚI HẠN RANGE QUÉT: Foundation/Freecell (0-7) chỉ nhận 1 lá
+                # Giới hạn phạm vi quét (Foundation/FreeCell chỉ bốc 1 lá cuối)
                 if to_id < 8:
                     search_range = [len(heap_from) - 1]
                 else:
-                    # Chỉ quét trong phạm vi số lá luật cho phép di chuyển
                     start_idx = max(0, len(heap_from) - max_allowed)
                     search_range = range(start_idx, len(heap_from))
 
@@ -108,7 +111,6 @@ class AStarSolver:
                     card = heap_from[card_idx]
                     target_logic = self.game.card_heaps[to_id]
                     
-                    # Tạm thời gán list để CheckMoveInto
                     old_list = target_logic.heap_list
                     target_logic.heap_list = current_heaps[to_id]
                     
@@ -116,8 +118,6 @@ class AStarSolver:
                         new_heaps = [h[:] for h in current_heaps]
                         moving_cards = new_heaps[from_id][card_idx:]
                         
-                        # Kiểm tra xem chuỗi bài di chuyển có hợp lệ không (nếu là nhiều lá)
-                        # Lưu ý: CheckMoveInto thường chỉ check lá đầu tiên của chuỗi
                         new_heaps[from_id] = new_heaps[from_id][:card_idx]
                         new_heaps[to_id].extend(moving_cards)
                         
@@ -129,7 +129,7 @@ class AStarSolver:
                             count += 1
                             h_score = self._heuristic(new_heaps)
                             new_path = path + [(from_id, to_id, card_idx)]
-                            # Hệ số 2.0 giúp AI quyết đoán hơn để tránh Timeout
+                            # Hệ số 2.0 để ưu tiên giải nhanh
                             heapq.heappush(queue, (new_g + (2.0 * h_score), count, new_heaps, new_path, new_g))
                     
                     target_logic.heap_list = old_list

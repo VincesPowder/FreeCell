@@ -6,7 +6,7 @@ POINT = {
     1: "A", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7",
     8: "8", 9: "9", 10: "10", 11: "J", 12: "Q", 13: "K",
 }
-COLOR = ["Heart", "Diamond", "Spade", "Club"]
+COLOR = ["Heart", "Club", "Diamond", "Spade"]
 
 class Card:
     def __init__(self, color, num):
@@ -223,14 +223,17 @@ class FreeCellGame:
                 return False
         return True
 
-    def GetMaxMovable(self, from_pile_id, num_cards_to_move):
+    def GetMaxMovable(self, from_pile_id, to_pile_id, num_cards_to_move):
+        # Tính số ô FreeCell đang trống
         empty_free_cells = sum(1 for i in range(4, 8) if len(self.card_heaps[i].heap_list) == 0)
-        empty_columns = sum(1 for i in range(8, 16) if len(self.card_heaps[i].heap_list) == 0)
         
-        if 8 <= from_pile_id <= 15:
-            source_heap_size = len(self.card_heaps[from_pile_id].heap_list)
-            if source_heap_size == num_cards_to_move:
+        # Tính số cột trống, NHƯNG KHÔNG ĐƯỢC TÍNH cột đích (to_pile_id) nếu nó đang trống
+        empty_columns = 0
+        for i in range(8, 16):
+            if len(self.card_heaps[i].heap_list) == 0 and i != to_pile_id:
                 empty_columns += 1
+        
+        # Đã xóa đoạn code cộng thêm 1 vô lý khi di chuyển cả cột
         
         return (1 + empty_free_cells) * (2 ** empty_columns)
 
@@ -244,7 +247,8 @@ class FreeCellGame:
         if not self.IsValidSequence(sub_stack):
             return False, "Invalid sequence (must be alternating colors and decreasing)!"
             
-        max_allowed = self.GetMaxMovable(come_id, len(sub_stack))
+        # SỬA Ở ĐÂY: Truyền thêm to_id vào hàm GetMaxMovable để công thức loại trừ cột đích
+        max_allowed = self.GetMaxMovable(come_id, to_id, len(sub_stack))
         if len(sub_stack) > max_allowed:
             return False, f"Not enough free cells! Can only move max {max_allowed} cards."
 
