@@ -5,12 +5,6 @@ import copy
 from heapq import heappush, heappop
 
 class UCSSolver:
-    """
-    UCS Solver cho FreeCell tuân thủ lý thuyết Global Search Strategies.
-    Sử dụng hàm đánh giá f(n) = g(n).
-    Áp dụng Late Goal Test: kiểm tra đích khi mở rộng nút.
-    """
-    
     def __init__(self, game_state):
         self.initial_game_source = game_state
         self.visited_states = set()
@@ -21,10 +15,6 @@ class UCSSolver:
         self.end_memory = None
         
     def _get_game_state_hash(self, game):
-        """
-        Mã hash tối ưu: Triệt tiêu tính đối xứng.
-        Sử dụng thuộc tính .color và .num từ class Card trong Freecell_Game.py
-        """
         # 1. Foundation: Trạng thái của 4 ô Foundation (0-3)
         # Chỉ cần lưu số lượng lá bài trong mỗi ô (vì bài lên đây luôn theo thứ tự A->K)
         foundation_state = tuple(len(game.card_heaps[i].heap_list) for i in range(4))
@@ -54,10 +44,6 @@ class UCSSolver:
         return (foundation_state, freecell_state, cascade_state)
     
     def _get_valid_moves(self, game):
-        """
-        Lấy danh sách các nước đi hợp lệ (di chuyển cả chuỗi bài).
-        Trả về format: (from_id, to_id, card_idx, num_cards)
-        """
         valid_moves = []
         foundation_moves = []
         
@@ -84,7 +70,6 @@ class UCSSolver:
         return foundation_moves if foundation_moves else valid_moves
     
     def _apply_move(self, game, move):
-        """Thực hiện nước đi trên trạng thái game hiện tại."""
         from_id, to_id, _, num_cards = move
         cards_to_move = game.card_heaps[from_id].heap_list[-num_cards:]
         game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
@@ -93,7 +78,6 @@ class UCSSolver:
             card.group_id, card.group_index = to_id, i
 
     def _undo_move(self, game, move):
-        """Hoàn tác nước đi để quay lại trạng thái trước đó."""
         from_id, to_id, _, num_cards = move
         cards_to_undo = game.card_heaps[to_id].heap_list[-num_cards:]
         game.card_heaps[to_id].heap_list = game.card_heaps[to_id].heap_list[:-num_cards]
@@ -102,9 +86,6 @@ class UCSSolver:
             card.group_id, card.group_index = from_id, i
 
     def solve(self, max_nodes=500000, timeout=300, stop_event=None):
-        """
-        Thực hiện giải thuật Uniform-Cost Search.
-        """
         self.start_time = time.time()
         process = psutil.Process(os.getpid())
         self.start_memory = process.memory_info().rss / (1024 ** 2)
