@@ -38,7 +38,7 @@ def LoadImages():
         mapped_suit = suit_map.get(card.color, "")
         mapped_rank = rank_map.get(card.point, "")
         
-        file_name = f"tmp/{mapped_suit}{mapped_rank}.png"
+        file_name = f"images/{mapped_suit}{mapped_rank}.png"
         
         try:
             card_img = pygame.image.load(file_name).convert_alpha()
