@@ -2,7 +2,7 @@ import heapq
 import time
 import psutil
 import os
-from Freecell_Game import OPERATIONS
+from Freecell_Game import OPERATIONS, COLOR 
 
 class AStarSolver:
     def __init__(self, game_state):
@@ -32,7 +32,8 @@ class AStarSolver:
         # 1. Foundation (0-3)
         if 0 <= to_id <= 3:
             if not target_heap:
-                return card['num'] == 1
+                # ÉP BUỘC: Át phải khớp đúng chất của ô Foundation tương ứng (Cơ, Chuồn, Rô, Bích)
+                return card['num'] == 1 and card['color'] == COLOR[to_id]
             last = target_heap[-1]
             return card['color'] == last['color'] and card['num'] == last['num'] + 1
         

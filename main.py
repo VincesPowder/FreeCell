@@ -156,10 +156,8 @@ class WindowGame:
                 self.log_offset = 0
     def GetCardRect(self, pile_id, card_index):
         if pile_id < 4: 
-            # Foundation (0-3) chuyển sang bên PHẢI (tương ứng cột 4, 5, 6, 7)
             return pygame.Rect(X_START + GAP * (pile_id + 4), 40, CARD_W, CARD_H)
         elif pile_id < 8: 
-            # FreeCell (4-7) chuyển sang bên TRÁI (tương ứng cột 0, 1, 2, 3)
             return pygame.Rect(X_START + GAP * (pile_id - 4), 40, CARD_W, CARD_H)
         else: 
             # Các cột bài chính (8-15) giữ nguyên bên dưới
