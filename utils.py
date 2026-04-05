@@ -16,32 +16,38 @@ def LoadImages():
     except:
         IMAGES["background"] = pygame.Surface((SCREEN_W, SCREEN_H))
         IMAGES["background"].fill((0, 100, 0))
-    try:
-        win = pygame.image.load("images/win.png").convert_alpha()
-        IMAGES["win"] = pygame.transform.smoothscale(win, (400, 200))
-    except: pass
+
 
     game = FreeCellGame()
-    try:
-        raw_blank = pygame.image.load("images/blank_card.png").convert_alpha()
-    except:
-        raw_blank = pygame.Surface((200, 300))
-        raw_blank.fill((255, 255, 255))
+    
+    # 1. Tạo từ điển (map) để dịch từ tên cũ sang tên file mới
+    suit_map = {
+        "Heart": "hearts",
+        "Club": "clubs",       
+        "Diamond": "diamonds",
+        "Spade": "spades"
+    }
+    
+    rank_map = {
+        "A": "1", "2": "2", "3": "3", "4": "4", "5": "5", 
+        "6": "6", "7": "7", "8": "8", "9": "9", "10": "10", 
+        "J": "11", "Q": "12", "K": "13"
+    }
 
     for card in game.CARDS:
-        blank_card = pygame.transform.smoothscale(raw_blank, (CARD_W, CARD_H))
-        try:
-            color_icon = pygame.image.load(f"images/{card.color}.png").convert_alpha()
-            point_icon = pygame.image.load(f"images/{card.point}-icon.png").convert_alpha()
-            
-            color_icon = pygame.transform.smoothscale(color_icon, (30, 30))
-            point_icon = pygame.transform.smoothscale(point_icon, (30, 30))
-            
-            blank_card.blit(point_icon, (5, 5))
-            blank_card.blit(color_icon, (CARD_W - 35, 5))
-        except:
-            pass 
-            
-        IMAGES[card.color + card.point] = blank_card
+        mapped_suit = suit_map.get(card.color, "")
+        mapped_rank = rank_map.get(card.point, "")
         
+        file_name = f"tmp/{mapped_suit}{mapped_rank}.png"
+        
+        try:
+            card_img = pygame.image.load(file_name).convert_alpha()
+            card_img = pygame.transform.smoothscale(card_img, (CARD_W, CARD_H))
+            IMAGES[card.color + card.point] = card_img
+        except Exception as e:
+            print(f"Cảnh báo: Không tìm thấy ảnh {file_name}")
+            error_card = pygame.Surface((CARD_W, CARD_H))
+            error_card.fill((255, 0, 0))
+            IMAGES[card.color + card.point] = error_card
+            
     return IMAGES
