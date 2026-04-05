@@ -86,7 +86,6 @@ class BFSSolver:
         game.card_heaps[from_id].heap_list = game.card_heaps[from_id].heap_list[:-num_cards]
         game.card_heaps[to_id].heap_list.extend(cards_to_move)
         
-        # Cập nhật group_id và group_index cho UI
         for i, card in enumerate(game.card_heaps[to_id].heap_list):
             card.group_id = to_id
             card.group_index = i

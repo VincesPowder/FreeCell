@@ -14,8 +14,6 @@ class IDSSolver:
         self.end_memory = None
         self.search_length = 0
         self.on_move_callback = on_move_callback
-        
-        # Khởi tạo process một lần duy nhất để tối ưu hiệu năng gọi hàm
         self.process = psutil.Process(os.getpid())
 
     def _get_game_state_hash(self, game):

@@ -233,7 +233,6 @@ class FreeCellGame:
             if len(self.card_heaps[i].heap_list) == 0 and i != to_pile_id:
                 empty_columns += 1
         
-        # Đã xóa đoạn code cộng thêm 1 vô lý khi di chuyển cả cột
         
         return (1 + empty_free_cells) * (2 ** empty_columns)
 
@@ -247,7 +246,6 @@ class FreeCellGame:
         if not self.IsValidSequence(sub_stack):
             return False, "Invalid sequence (must be alternating colors and decreasing)!"
             
-        # SỬA Ở ĐÂY: Truyền thêm to_id vào hàm GetMaxMovable để công thức loại trừ cột đích
         max_allowed = self.GetMaxMovable(come_id, to_id, len(sub_stack))
         if len(sub_stack) > max_allowed:
             return False, f"Not enough free cells! Can only move max {max_allowed} cards."

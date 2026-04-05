@@ -136,7 +136,7 @@ class AStarSolver:
                             visited[s_hash] = new_g
                             count += 1
                             h_s = self._heuristic(new_heaps)
-                            # Lưu path chuẩn để UI hiển thị sau khi giải xong
+
                             new_path = path + [(from_id, to_id, card_idx)]
                             heapq.heappush(queue, (new_g + (2.0 * h_s), count, new_heaps, new_path, new_g))
 
