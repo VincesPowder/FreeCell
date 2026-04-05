@@ -13,6 +13,9 @@ class IDSSolver:
         self.end_memory = None
         self.search_length = 0
         self.on_move_callback = on_move_callback
+        
+        # Khởi tạo process một lần duy nhất để tối ưu hiệu năng gọi hàm
+        self.process = psutil.Process(os.getpid())
 
     def _get_game_state_hash(self, game):
         """Tạo mã hash tối ưu, loại bỏ tính đối xứng của FreeCell và Cascade"""
@@ -22,7 +25,7 @@ class IDSSolver:
             for i in range(4)
         )
 
-        # 2. Freecells (4-7): Sort để đồng nhất các ô Freecell (bỏ vào ô nào cũng giống nhau)
+        # 2. Freecells (4-7): Sort để đồng nhất các ô Freecell
         freecells = []
         for i in range(4, 8):
             if game.card_heaps[i].heap_list:
@@ -100,16 +103,7 @@ class IDSSolver:
 
     def _dfs_limited(self, game, path, ancestors, visited_global, depth_limit, timeout):
         """
-        DFS giới hạn độ sâu với visited 2 tầng:
-
-        - ancestors (set hash): các trạng thái đang có trên đường đi hiện tại.
-          Thêm khi đi xuống, XÓA khi backtrack → tránh vòng lặp trên path.
-
-        - visited_global (dict hash → min_depth_reached): trạng thái đã thăm
-          ở bất kỳ nhánh nào trong vòng lặp depth này, kèm độ sâu nhỏ nhất đã đến.
-          Nếu node hiện tại ở depth >= min_depth đã ghi nhận → bỏ qua (không thể
-          tìm được đường ngắn hơn qua đây).
-          KHÔNG xóa khi backtrack → cắt tỉa toàn cục trong cùng 1 vòng depth.
+        DFS giới hạn độ sâu với visited 2 tầng.
         """
         if self.stop_event and self.stop_event.is_set():
             return "STOPPED"
@@ -135,7 +129,6 @@ class IDSSolver:
             skip = child_hash in ancestors
 
             # Tầng 2: bỏ qua nếu đã thăm trạng thái này ở độ sâu <= child_depth
-            # (nghĩa là trước đây đã mở rộng từ đây với nhiều budget hơn hoặc bằng → không cần làm lại)
             if not skip:
                 prev_depth = visited_global.get(child_hash, None)
                 if prev_depth is not None and prev_depth <= child_depth:
@@ -166,8 +159,9 @@ class IDSSolver:
     def solve(self, max_depth=100, timeout=300, stop_event=None):
         self.stop_event = stop_event
         self.start_time = time.time()
-        process = psutil.Process(os.getpid())
-        self.start_memory = process.memory_info().rss / (1024 ** 2)
+        
+        # Đọc RSS memory trước khi bắt đầu giải
+        self.start_memory = self.process.memory_info().rss / (1024 ** 2)
         self.expanded_nodes = 0
 
         current_game = copy.deepcopy(self.initial_game)
@@ -179,9 +173,7 @@ class IDSSolver:
 
         # IDS: Chạy DFS lặp lại với độ sâu tăng dần
         for depth in range(1, max_depth + 1):
-            # ancestors: hash trên đường đi hiện tại, xóa khi backtrack
             ancestors = {initial_hash}
-            # visited_global: hash → độ sâu nhỏ nhất đã thăm trong vòng lặp này
             visited_global = {initial_hash: 0}
             solution_path = []
 
@@ -202,8 +194,9 @@ class IDSSolver:
 
     def _finalize(self, solved, solution, error=None):
         self.end_time = time.time()
-        process = psutil.Process(os.getpid())
-        self.end_memory = process.memory_info().rss / (1024 ** 2)
+        
+        # Đọc RSS memory ngay sau khi kết thúc vòng lặp để lấy đỉnh bộ nhớ
+        self.end_memory = self.process.memory_info().rss / (1024 ** 2)
 
         # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
         formatted_solution = [(m[0], m[1], m[2]) for m in solution]
@@ -212,10 +205,12 @@ class IDSSolver:
             'solved': solved,
             'solution': formatted_solution,
             'search_time': self.end_time - self.start_time,
-            'memory_used': max(0, self.end_memory - self.start_memory) if self.end_memory else 0,
+            # Dùng max(0, ...) để tránh âm nếu OS hoặc Garbage Collector dọn dẹp RAM của process
+            'memory_used': max(0, self.end_memory - self.start_memory) if self.start_memory and self.end_memory else 0,
             'expanded_nodes': self.expanded_nodes,
             'search_length': len(formatted_solution)
         }
         if error:
             res['error'] = error
+            
         return res
