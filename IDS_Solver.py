@@ -7,6 +7,7 @@ class IDSSolver:
     def __init__(self, game_state, on_move_callback=None):
         self.initial_game = copy.deepcopy(game_state)
         self.expanded_nodes = 0
+        self.peak_memory = 0
         self.start_time = None
         self.end_time = None
         self.start_memory = None
@@ -182,6 +183,10 @@ class IDSSolver:
                 ancestors, visited_global,
                 depth, timeout
             )
+            
+            current_mem = self.process.memory_info().rss / (1024 ** 2)
+            if current_mem > self.peak_memory:
+                self.peak_memory = current_mem
 
             if result == "STOPPED":
                 return self._finalize(False, [], "Solver stopped!")
@@ -196,7 +201,7 @@ class IDSSolver:
         self.end_time = time.time()
         
         # Đọc RSS memory ngay sau khi kết thúc vòng lặp để lấy đỉnh bộ nhớ
-        self.end_memory = self.process.memory_info().rss / (1024 ** 2)
+        mem_diff = max(0, self.peak_memory - self.start_memory)
 
         # Trả về đúng 3 giá trị (from, to, index) để main.py không bị lỗi unpack
         formatted_solution = [(m[0], m[1], m[2]) for m in solution]
@@ -205,8 +210,7 @@ class IDSSolver:
             'solved': solved,
             'solution': formatted_solution,
             'search_time': self.end_time - self.start_time,
-            # Dùng max(0, ...) để tránh âm nếu OS hoặc Garbage Collector dọn dẹp RAM của process
-            'memory_used': max(0, self.end_memory - self.start_memory) if self.start_memory and self.end_memory else 0,
+            'memory_used': mem_diff,
             'expanded_nodes': self.expanded_nodes,
             'search_length': len(formatted_solution)
         }
