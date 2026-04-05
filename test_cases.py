@@ -190,14 +190,14 @@ class TestCases:
         game.NewGameWithNumber(25904)
 
     @staticmethod
-    def setup_test_9_seed_27121(game: FreeCellGame):
-        """Mức 9: Ván chơi thực tế - Seed #27121."""
-        game.NewGameWithNumber(27121)
+    def setup_test_9_seed_1(game: FreeCellGame):
+        """Mức 9: Ván chơi thực tế - Seed #1."""
+        game.NewGameWithNumber(1)
 
     @staticmethod
-    def setup_test_10_seed_24176(game: FreeCellGame):
-        """Mức 10: Ván chơi thực tế - Seed #24176."""
-        game.NewGameWithNumber(24176)
+    def setup_test_10_seed_617(game: FreeCellGame):
+        """Mức 10: Ván chơi thực tế - Seed #617."""
+        game.NewGameWithNumber(617)
 
     @staticmethod
     def load_test(test_num: int):
@@ -211,8 +211,8 @@ class TestCases:
             6: TestCases.setup_test_6_stress_8col,
             7: TestCases.setup_test_7_stress_4col,
             8: TestCases.setup_test_8_seed_25904,
-            9: TestCases.setup_test_9_seed_27121,
-            10: TestCases.setup_test_10_seed_24176,
+            9: TestCases.setup_test_9_seed_1,
+            10: TestCases.setup_test_10_seed_617,
         }
         setup_f = tests.get(test_num, TestCases.setup_test_1_trivial)
         setup_f(game)
